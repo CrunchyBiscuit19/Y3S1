@@ -23,6 +23,9 @@ using namespace std;
 
 #define numSquares 3
 #define numPlanets 9
+#define numStars 5
+#define faceIndex 1
+#define angelIndex 4
 
 
 enum class Shape
@@ -33,7 +36,9 @@ enum class Shape
 	Rectangle,
 	Star,
 	Revolver,
-	Crewmate
+	Crewmate,
+	KnockedOutFace,
+	SmilingFace
 };
 
 
@@ -53,6 +58,8 @@ public:
 	float orbitCenterY;
 	float spin;
 	float spinSpeed;
+	float orbitTilt;
+	float orbitTiltSpeed;
 
 	planet()
 	{
@@ -69,14 +76,18 @@ public:
 		orbitCenterY = 0;
 		spin = 0;
 		spinSpeed = 0;
+		orbitTilt = 0;
+		orbitTiltSpeed = 0;
 	}
 };
 
 GLfloat PI = 3.14;
+GLfloat backgroundColor[3] = { 0.0f, 0.0f, 0.3f };
 float alpha = 0.0, k=1;
 float tx = 0.0, ty=0.0;
 planet planetList[numPlanets];
 planet squareList[numSquares];
+planet starList[numStars];
 
 
 bool clockMode = false;
@@ -101,7 +112,7 @@ void reshape (int w, int h)
 
 void init(void)
 {
-	glClearColor (0.0, 0.0, 0.3, 1.0);
+	glClearColor (backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0);
 	glShadeModel (GL_SMOOTH);
 	glEnable(GL_BLEND);
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -229,6 +240,97 @@ void drawCrewmate(float radius, const GLfloat color[3], float alpha)
 	glPopMatrix();
 }
 
+void drawArc(float radius, float thickness, float startAngle, float endAngle, const GLfloat color[3], float alpha)
+{
+	float inner = radius - thickness / 2, outer = radius + thickness / 2;
+
+	glColor4f(color[0], color[1], color[2], alpha);
+
+	glBegin(GL_QUAD_STRIP);
+
+		for (int i = 0; i <= circleSegments; i++)
+		{
+			float angle = startAngle + (endAngle - startAngle) * i / circleSegments;
+			glVertex2f(inner * cos(angle), inner * sin(angle));
+			glVertex2f(outer * cos(angle), outer * sin(angle));
+		}
+
+	glEnd();
+}
+
+void drawCross(float length, float thickness, const GLfloat color[3], float alpha)
+{
+	glPushMatrix();
+	glRotatef(45, 0, 0, 1);
+	drawRectangle(length, thickness, color, alpha);
+	drawRectangle(thickness, length, color, alpha);
+	glPopMatrix();
+}
+
+void drawKnockedOutFace(float radius, const GLfloat color[3], float alpha)
+{
+	GLfloat featureColor[3] = { 0.1f, 0.1f, 0.1f };
+
+	drawCircle(radius, color, alpha);
+
+	glPushMatrix();
+	glTranslatef(-radius * 0.38f, radius * 0.32f, 0);
+	drawCross(radius * 0.44f, radius * 0.12f, featureColor, alpha);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslatef(radius * 0.38f, radius * 0.32f, 0);
+	drawCross(radius * 0.44f, radius * 0.12f, featureColor, alpha);
+	glPopMatrix();
+
+	// frown: upper half of an arc centred below the mouth, so the corners point down
+	glPushMatrix();
+	glTranslatef(0, -radius * 0.60f, 0);
+	drawArc(radius * 0.42f, radius * 0.12f, PI / 9, 8 * PI / 9, featureColor, alpha);
+	glPopMatrix();
+}
+
+void drawSmilingFace(float radius, const GLfloat color[3], float alpha)
+{
+	GLfloat featureColor[3] = { 0.1f, 0.1f, 0.1f };
+
+	drawCircle(radius, color, alpha);
+
+	glPushMatrix();
+	glTranslatef(-radius * 0.35f, radius * 0.30f, 0);
+	drawCircle(radius * 0.11f, featureColor, alpha);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslatef(radius * 0.35f, radius * 0.30f, 0);
+	drawCircle(radius * 0.11f, featureColor, alpha);
+	glPopMatrix();
+
+	// smile: lower half of an arc centred above the mouth, so the corners point up
+	glPushMatrix();
+	glTranslatef(0, -radius * 0.10f, 0);
+	drawArc(radius * 0.45f, radius * 0.11f, PI + PI / 6, 2 * PI - PI / 6, featureColor, alpha);
+	glPopMatrix();
+}
+
+// a filled ellipse with a smaller background-coloured ellipse punched out of it
+void drawHalo(float radiusX, float radiusY, float thickness, const GLfloat color[3], float alpha)
+{
+	drawEllipse(radiusX, radiusY, color, alpha);
+
+	glColor4f(backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0f);
+
+	glBegin(GL_POLYGON);
+
+		for (int i = 0; i < circleSegments; i++)
+		{
+			float angle = 2 * PI * i / circleSegments;
+			glVertex2f((radiusX - thickness) * cos(angle), (radiusY - thickness) * sin(angle));
+		}
+
+	glEnd();
+}
+
 void drawPlanet(const planet &p)
 {
 	switch (p.shape)
@@ -254,6 +356,12 @@ void drawPlanet(const planet &p)
 		case Shape::Crewmate:
 			drawCrewmate(p.size, p.color, p.alpha);
 			break;
+		case Shape::KnockedOutFace:
+			drawKnockedOutFace(p.size, p.color, p.alpha);
+			break;
+		case Shape::SmilingFace:
+			drawSmilingFace(p.size, p.color, p.alpha);
+			break;
 	}
 }
 
@@ -267,6 +375,30 @@ void generatePlanets()
 	planetList[0].color[2] = 0.0;
 	planetList[0].size = 1.5;
 	planetList[0].shape = Shape::Circle;
+
+	// knocked-out face on elliptical orbit
+	planetList[1].distFromRef = 6.0;
+	planetList[1].angularSpeed = 2.5;
+	planetList[1].color[0] = 0.95;
+	planetList[1].color[1] = 0.85;
+	planetList[1].color[2] = 0.25;
+	planetList[1].size = 1.0;
+	planetList[1].shape = Shape::KnockedOutFace;
+	planetList[1].orbitAspect = 0.5;
+	planetList[1].orbitTiltSpeed = 1.5;
+    planetList[1].spinSpeed = 7;
+
+	// smiling face with a bobbing halo
+	planetList[4].distFromRef = 3.2;
+	planetList[4].angularSpeed = -4.0;
+	planetList[4].color[0] = 0.98;
+	planetList[4].color[1] = 0.80;
+	planetList[4].color[2] = 0.62;
+	planetList[4].size = 0.75;
+	planetList[4].shape = Shape::SmilingFace;
+	planetList[4].orbitAspect = 1.6;
+	planetList[4].orbitTiltSpeed = -2.0;
+	planetList[4].spinSpeed = 9;		// drives the halo bob
 
 	// asteroid vertical orbit
 	planetList[2].distFromRef = 4.5;
@@ -295,14 +427,25 @@ void generatePlanets()
 
 }
 
+void getOrbitPosition(const planet &p, float &orbitX, float &orbitY)
+{
+	float orbitAngle = p.angle * PI / 180;
+	float localX = p.orbitCenterX + p.distFromRef * -sin(orbitAngle);
+	float localY = p.orbitCenterY + p.distFromRef * p.orbitAspect * cos(orbitAngle);
+
+	// spin the orbit path itself clockwise about the reference point
+	float tilt = p.orbitTilt * PI / 180;
+	orbitX = localX * cos(tilt) + localY * sin(tilt);
+	orbitY = -localX * sin(tilt) + localY * cos(tilt);
+}
+
 void drawOrbitingBody(const planet &p)
 {
 	if (p.size <= 0)
 		return;
 
-	float orbitAngle = p.angle * PI / 180;
-	float orbitX = p.orbitCenterX + p.distFromRef * -sin(orbitAngle);
-	float orbitY = p.orbitCenterY + p.distFromRef * p.orbitAspect * cos(orbitAngle);
+	float orbitX, orbitY;
+	getOrbitPosition(p, orbitX, orbitY);
 
 	glPushMatrix();
 	glTranslatef(orbitX, orbitY, 0);
@@ -331,6 +474,112 @@ void generateSquares()
 		squareList[i].size = 0.35f;
 		squareList[i].shape = Shape::Crewmate;
 		squareList[i].angle = i * 360.0f / numSquares;
+		squareList[i].spinSpeed = (i % 2 == 0 ? -1 : 1) * (3.0f + i);
+	}
+}
+
+void drawFaceSystem(const planet &face)
+{
+	if (face.size <= 0)
+		return;
+
+	float orbitX, orbitY;
+	getOrbitPosition(face, orbitX, orbitY);
+
+	glPushMatrix();
+	glTranslatef(orbitX, orbitY, 0);
+
+		glPushMatrix();
+		glRotatef(12.0f * sin(face.spin * PI / 180), 0, 0, 1);	// dazed head-loll
+		drawPlanet(face);
+		glPopMatrix();
+
+		for (int i = 0; i < numStars; i++)
+		{
+			const planet &star = starList[i];
+			float starAngle = star.angle * PI / 180;
+
+			glPushMatrix();
+			glTranslatef(star.distFromRef * -sin(starAngle), star.distFromRef * cos(starAngle), 0);
+			glRotatef(star.spin, 0, 0, 1);
+			drawPlanet(star);
+			glPopMatrix();
+		}
+
+	glPopMatrix();
+}
+
+// the halo hangs in the smiling face's own frame and bobs within it, the same
+// nesting the stars use over the knocked-out face
+void drawAngelSystem(const planet &angel)
+{
+	if (angel.size <= 0)
+		return;
+
+	GLfloat haloColor[3] = { 1.0f, 0.88f, 0.35f };
+
+	float orbitX, orbitY;
+	getOrbitPosition(angel, orbitX, orbitY);
+
+	glPushMatrix();
+	glTranslatef(orbitX, orbitY, 0);
+
+		drawPlanet(angel);
+
+		float bob = angel.size * 0.10f * sin(angel.spin * PI / 180);
+
+		glPushMatrix();
+		glTranslatef(0, angel.size * 1.30f + bob, 0);
+		drawHalo(angel.size * 0.70f, angel.size * 0.26f, angel.size * 0.09f, haloColor, angel.alpha);
+		glPopMatrix();
+
+	glPopMatrix();
+}
+
+void generateStars()
+{
+	const int paletteSize = 3;
+	GLfloat palette[paletteSize][3] =
+	{
+		{ 1.000f, 0.960f, 0.600f },
+		{ 1.000f, 0.750f, 0.850f },
+		{ 0.700f, 0.900f, 1.000f }
+	};
+
+	for (int i = 0; i < numStars; i++)
+	{
+		starList[i].distFromRef = 1.9f;
+		starList[i].angularSpeed = 6.0f;
+		starList[i].color[0] = palette[i % paletteSize][0];
+		starList[i].color[1] = palette[i % paletteSize][1];
+		starList[i].color[2] = palette[i % paletteSize][2];
+		starList[i].size = 0.30f;
+		starList[i].shape = Shape::Star;
+		starList[i].angle = i * 360.0f / numStars;
+		starList[i].spinSpeed = 8;
+	}
+}
+
+void updateStars()
+{
+	const planet &face = planetList[faceIndex];
+
+	float faceX, faceY;
+	getOrbitPosition(face, faceX, faceY);
+
+	float range = face.distFromRef;
+	float normalizedY = (range > 0) ? (faceY + range) / (2 * range) : 0.5f;
+
+	if (normalizedY < 0) normalizedY = 0;
+	if (normalizedY > 1) normalizedY = 1;
+
+	float speedFactor = 0.25f + 1.75f * normalizedY;
+
+	for (int i = 0; i < numStars; i++)
+	{
+		starList[i].alpha = face.alpha;
+		starList[i].angle -= starList[i].angularSpeed * speedFactor * timer;	// clockwise
+		starList[i].spin += starList[i].spinSpeed * timer;
 	}
 }
 
@@ -345,7 +594,14 @@ void display(void)
 	glRotatef(alpha, 0, 0, 1);
 
 	for (int i = 0; i < numPlanets; i++)
-		drawOrbitingBody(planetList[i]);
+	{
+		if (i == faceIndex)
+			drawFaceSystem(planetList[i]);
+		else if (i == angelIndex)
+			drawAngelSystem(planetList[i]);
+		else
+			drawOrbitingBody(planetList[i]);
+	}
 
 	for (int i = 0; i < numSquares; i++)
 		drawOrbitingBody(squareList[i]);
@@ -366,6 +622,7 @@ void idle()
 			planetList[i].alpha = 1;
 			planetList[i].angle += planetList[i].angularSpeed*timer;
 			planetList[i].spin += planetList[i].spinSpeed*timer;
+			planetList[i].orbitTilt += planetList[i].orbitTiltSpeed*timer;
 		}
 
 		for(int i=0;i<numSquares;i++)
@@ -373,6 +630,7 @@ void idle()
 			squareList[i].alpha = 1;
 			squareList[i].angle += squareList[i].angularSpeed*timer;
 			squareList[i].spin += squareList[i].spinSpeed*timer;
+			squareList[i].orbitTilt += squareList[i].orbitTiltSpeed*timer;
 		}
 
 	}
@@ -388,6 +646,7 @@ void idle()
 			planetList[i].alpha = 1;
 			planetList[i].angle = ((float)timeinfo->tm_sec  )*6;
 			planetList[i].spin += planetList[i].spinSpeed*timer;
+			planetList[i].orbitTilt += planetList[i].orbitTiltSpeed*timer;
 		}
 
 		for (int i = 0; i < numSquares; i++)
@@ -395,9 +654,12 @@ void idle()
 			squareList[i].alpha = 1;
 			squareList[i].angle = ((float)timeinfo->tm_sec  )*6;
 			squareList[i].spin += squareList[i].spinSpeed*timer;
+			squareList[i].orbitTilt += squareList[i].orbitTiltSpeed*timer;
 		}
 	}
-	
+
+	updateStars();
+
 	glutPostRedisplay();
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
@@ -414,6 +676,23 @@ void keyboard (unsigned char key, int x, int y)
 		case 'Q':
             exit(0);
 	
+		case 'w': ty += 0.5f; break;
+		case 's': ty -= 0.5f; break;
+		case 'a': tx -= 0.5f; break;
+		case 'd': tx += 0.5f; break;
+
+		case 'z': alpha += 5.0f; break;
+		case 'x': alpha -= 5.0f; break;
+
+		case '=':
+		case '+': k *= 1.1f; break;
+		case '-':
+		case '_': k /= 1.1f; break;
+
+		case 'r':
+			k = 1; tx = ty = alpha = 0;
+			break;
+
 		case 't':
 			clockMode = !clockMode;
 			if (clockMode)
@@ -432,12 +711,17 @@ int main(int argc, char **argv)
 	cout<<"CS3241 Lab 2\n\n";
 	cout<<"+++++CONTROL BUTTONS+++++++\n\n";
 	cout<<"Toggle Time Mode: T\n";
-    cout<<"Exit: ESC or q/Q\n";
-	cout << "Current Mode: Clock mode." << endl;
+	cout<<"Pan: W/A/S/D\n";
+	cout<<"Rotate: Z/X\n";
+	cout<<"Zoom: +/-\n";
+	cout<<"Reset View: R\n";
+    cout<<"Exit: ESC or q/Q\n\n";
+	cout << "Current Mode: Solar mode." << endl;
 
 
 	generatePlanets();
 	generateSquares();
+	generateStars();
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode (GLUT_SINGLE | GLUT_RGB | GLUT_DEPTH);
