@@ -306,29 +306,29 @@ void drawSmilingFace(float radius, const GLfloat color[3], float alpha)
 	drawCircle(radius * 0.11f, featureColor, alpha);
 	glPopMatrix();
 
-	// smile: lower half of an arc centred above the mouth, so the corners point up
 	glPushMatrix();
 	glTranslatef(0, -radius * 0.10f, 0);
 	drawArc(radius * 0.45f, radius * 0.11f, PI + PI / 6, 2 * PI - PI / 6, featureColor, alpha);
 	glPopMatrix();
 }
 
-// a filled ellipse with a smaller background-coloured ellipse punched out of it
-void drawHalo(float radiusX, float radiusY, float thickness, const GLfloat color[3], float alpha)
+void drawEllipseRing(float outerX, float outerY, float innerX, float innerY, const GLfloat color[3], float alpha)
 {
-	drawEllipse(radiusX, radiusY, color, alpha);
+	glBegin(GL_QUAD_STRIP);
 
-	glColor4f(backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0f);
-
-	glBegin(GL_POLYGON);
-
-		for (int i = 0; i < circleSegments; i++)
+		for (int i = 0; i <= circleSegments; i++)
 		{
 			float angle = 2 * PI * i / circleSegments;
-			glVertex2f((radiusX - thickness) * cos(angle), (radiusY - thickness) * sin(angle));
+			shadedVertex(innerX * cos(angle), innerY * sin(angle), color, alpha);
+			shadedVertex(outerX * cos(angle), outerY * sin(angle), color, alpha);
 		}
 
 	glEnd();
+}
+
+void drawHalo(float radiusX, float radiusY, float thickness, const GLfloat color[3], float alpha)
+{
+	drawEllipseRing(radiusX, radiusY, radiusX - thickness, radiusY - thickness, color, alpha);
 }
 
 void drawPlanet(const planet &p)
@@ -509,8 +509,6 @@ void drawFaceSystem(const planet &face)
 	glPopMatrix();
 }
 
-// the halo hangs in the smiling face's own frame and bobs within it, the same
-// nesting the stars use over the knocked-out face
 void drawAngelSystem(const planet &angel)
 {
 	if (angel.size <= 0)
