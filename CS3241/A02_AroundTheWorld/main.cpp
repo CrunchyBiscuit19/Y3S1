@@ -27,7 +27,7 @@ class Planet;
 
 using DrawBody = void (*)(const Planet&);
 
-enum class ClockHand { Second, Minute, Hour };
+enum class ClockHand { Second, Minute, Hour, None };
 
 class Planet {
    public:
@@ -71,7 +71,7 @@ class Planet {
         alpha = 1.0;
         color[0] = color[1] = color[2] = 0;
         draw = nullptr;
-        clockHand = ClockHand::Second;
+        clockHand = ClockHand::None;
     }
 };
 
@@ -87,7 +87,7 @@ bool clockMode = false;
 
 time_t seconds = 0;
 struct tm* timeinfo;
-float timer = 1;
+float timer = 2;
 
 // Helper
 
@@ -321,6 +321,7 @@ void generatePlanets() {
     rugby.orbitCenterX = 1.4;
     rugby.orbitCenterY = 0.7;
     rugby.spinSpeed = 12;
+    rugby.clockHand = ClockHand::Minute;
     planetList.push_back(rugby);
 
     // revolver wide, flat orbit
@@ -350,6 +351,7 @@ void generatePlanets() {
     revolver.size = 0.9;
     revolver.orbitAspect = 0.45;
     revolver.spinSpeed = 9;
+    revolver.clockHand = ClockHand::Minute;
     planetList.push_back(revolver);
 
     // smiling face with a bobbing halo
@@ -476,6 +478,7 @@ void generatePlanets() {
         crewmate.size = 0.35f;
         crewmate.angle = i * 360.0f / NUM_CREWMATES;
         crewmate.spinSpeed = (i % 2 == 0 ? -1 : 1) * (3.0f + i);
+        crewmate.clockHand = ClockHand::Second;
         planetList.push_back(crewmate);
     }
 
@@ -483,7 +486,6 @@ void generatePlanets() {
     GLfloat starPalette[starPaletteSize][3] = {{1.000f, 0.960f, 0.600f},
                                                {1.000f, 0.750f, 0.850f},
                                                {0.700f, 0.900f, 1.000f}};
-
     auto& frownPlanet = planetList[frownIndex];
     for (int i = 0; i < NUM_STARS; i++) {
         Planet star;
@@ -501,6 +503,53 @@ void generatePlanets() {
         star.angle = i * 360.0f / NUM_STARS;
         star.spinSpeed = 8;
         frownPlanet.subplanets.push_back(star);
+    }
+}
+
+// Clock
+
+const float clockBandRadius[3] = {3.0f, 5.5f, 8.0f};
+const float clockBandSpacing = 0.6f;
+
+void applyClockLayout() {
+    int bandTotal[3] = {0, 0, 0};
+    int bandPlaced[3] = {0, 0, 0};
+
+    for (int i = 0; i < planetList.size(); i++) {
+        if (planetList[i].clockHand != ClockHand::None)
+            bandTotal[(int)planetList[i].clockHand]++;
+    }
+
+    for (int i = 0; i < planetList.size(); i++) {
+        Planet& p = planetList[i];
+
+        if (p.clockHand == ClockHand::None)
+            continue;
+
+        int band = (int)p.clockHand;
+        int k = bandPlaced[band]++;
+        float offset = (k - (bandTotal[band] - 1) / 2.0f) * clockBandSpacing;
+
+        p.dist = clockBandRadius[band] + offset;
+
+        p.orbitAspect = 1.0f;
+        p.orbitCenterX = 0;
+        p.orbitCenterY = 0;
+        p.orbitTilt = 0;
+        p.orbitTiltSpeed = 0;
+    }
+}
+
+float clockHandAngle(ClockHand hand, const struct tm* t) {
+    switch (hand) {
+        case ClockHand::Second:
+            return -(t->tm_sec) * 6.0f;
+        case ClockHand::Minute:
+            return -(t->tm_min + t->tm_sec / 60.0f) * 6.0f;
+        case ClockHand::Hour:
+            return -(t->tm_hour % 12 + t->tm_min / 60.0f) * 30.0f;
+        default:
+            return 0.0f;
     }
 }
 
@@ -553,8 +602,8 @@ void idle() {
 
         p.alpha = 1;
 
-        if (clockMode) {
-            p.angle = ((float)timeinfo->tm_sec) * 6;
+        if (clockMode && p.clockHand != ClockHand::None) {
+            p.angle = clockHandAngle(p.clockHand, timeinfo);
         } else {
             p.angle += p.angularSpeed * timer;
         }
@@ -630,6 +679,7 @@ void keyboard(unsigned char key, int x, int y) {
             clockMode = !clockMode;
             if (clockMode) {
                 savedPlanetList = planetList;
+                applyClockLayout();
                 std::cout << "Current Mode: Clock mode." << std::endl;
             } else {
                 planetList = savedPlanetList;
