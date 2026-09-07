@@ -44,7 +44,7 @@ DrawBody bodyDrawFn(Body b);
 
 class Planet {
    public:
-    float distFromRef;
+    float dist;
     float angularSpeed;
     float angle;
     float orbitAspect;
@@ -68,7 +68,7 @@ class Planet {
     std::vector<Planet> subplanets;
 
     Planet() {
-        distFromRef = 0;
+        dist = 0;
         angularSpeed = 0;
         angle = 0;
         orbitAspect = 1.0;
@@ -111,9 +111,9 @@ float timer = 1;
 
 void getOrbitPosition(const Planet& p, float& orbitX, float& orbitY) {
     float orbitAngle = p.angle * PI / 180;
-    float localX = p.orbitCenterX + p.distFromRef * -sin(orbitAngle);
+    float localX = p.orbitCenterX + p.dist * -sin(orbitAngle);
     float localY =
-        p.orbitCenterY + p.distFromRef * p.orbitAspect * cos(orbitAngle);
+        p.orbitCenterY + p.dist * p.orbitAspect * cos(orbitAngle);
 
     // spin the orbit path itself
     float tilt = p.orbitTilt * PI / 180;
@@ -125,7 +125,7 @@ float parentHeightFactor(const Planet& parent) {
     float parentX, parentY;
     getOrbitPosition(parent, parentX, parentY);
 
-    float range = parent.distFromRef;
+    float range = parent.dist;
     float normalizedY = (range > 0) ? (parentY + range) / (2 * range) : 0.5f;
 
     if (normalizedY < 0)
@@ -323,7 +323,6 @@ void drawStarBody(const Planet& p) {
 void drawFrownBody(const Planet& p) {
     GLfloat featureColor[3] = {0.1f, 0.1f, 0.1f};
 
-    glPushMatrix();
     glRotatef(12.0f * sin(p.spin * PI / 180), 0, 0, 1); // head roll
 
     drawCircle(p.size, p.color, p.alpha);
@@ -342,8 +341,6 @@ void drawFrownBody(const Planet& p) {
     glTranslatef(0, -p.size * 0.60f, 0);
     drawArc(p.size * 0.42f, p.size * 0.12f, PI / 9, 8 * PI / 9, featureColor,
             p.alpha);
-    glPopMatrix();
-
     glPopMatrix();
 
     for (int i = 0; i < p.subplanets.size(); i++) {
@@ -441,7 +438,7 @@ void generatePlanets() {
     //The sun
     Planet sun;
     sun.setBody(Body::Sun);
-    sun.distFromRef = 0;
+    sun.dist = 0;
     sun.angularSpeed = 0;
     sun.color[0] = 1.0;
     sun.color[1] = 0.7;
@@ -452,7 +449,7 @@ void generatePlanets() {
     // knocked-out face on elliptical orbit
     Planet face;
     face.setBody(Body::Frown);
-    face.distFromRef = 6.0;
+    face.dist = 6.0;
     face.angularSpeed = 2.5;
     face.color[0] = 0.95;
     face.color[1] = 0.85;
@@ -467,7 +464,7 @@ void generatePlanets() {
     // asteroid vertical orbit
     Planet asteroid;
     asteroid.setBody(Body::Asteroid);
-    asteroid.distFromRef = 4.5;
+    asteroid.dist = 4.5;
     asteroid.angularSpeed = 3;
     asteroid.color[0] = 0.60;
     asteroid.color[1] = 0.35;
@@ -483,7 +480,7 @@ void generatePlanets() {
     // revolver wide, flat orbit
     Planet revolver;
     revolver.setBody(Body::Revolver);
-    revolver.distFromRef = 8;
+    revolver.dist = 8;
     revolver.angularSpeed = 2;
     revolver.color[0] = 1.0;
     revolver.color[1] = 0.9;
@@ -496,7 +493,7 @@ void generatePlanets() {
     // smiling face with a bobbing halo
     Planet smile;
     smile.setBody(Body::Smile);
-    smile.distFromRef = 3.2;
+    smile.dist = 3.2;
     smile.angularSpeed = -4.0;
     smile.color[0] = 0.98;
     smile.color[1] = 0.80;
@@ -508,7 +505,7 @@ void generatePlanets() {
 
     Planet halo;
     halo.setBody(Body::Halo);
-    halo.distFromRef = 0;
+    halo.dist = 0;
     halo.orbitCenterY = smile.size * 1.30f;
     halo.color[0] = 1.0f;
     halo.color[1] = 0.88f;
@@ -529,7 +526,7 @@ void generatePlanets() {
         Planet crewmate;
 
         crewmate.setBody(Body::Crewmate);
-        crewmate.distFromRef = 4.0f + i * 2.f;
+        crewmate.dist = 4.0f + i * 2.f;
         crewmate.angularSpeed = (i % 2 == 0 ? 1 : -1) * (4.0f - i * 0.5f);
         crewmate.color[0] = crewmatePalette[i % crewmatePaletteSize][0];
         crewmate.color[1] = crewmatePalette[i % crewmatePaletteSize][1];
@@ -550,7 +547,7 @@ void generatePlanets() {
         Planet star;
         star.setBody(Body::Star);
         star.speedFromParentHeight = true;
-        star.distFromRef = 1.9f;
+        star.dist = 1.9f;
         star.angularSpeed = -6.0f;  // clockwise
         star.color[0] = starPalette[i % starPaletteSize][0];
         star.color[1] = starPalette[i % starPaletteSize][1];
