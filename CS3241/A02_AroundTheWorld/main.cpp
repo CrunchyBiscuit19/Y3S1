@@ -29,12 +29,13 @@ using DrawBody = void (*)(const Planet&);
 
 enum class Body {
     Sun,
-    KnockedOut,
+    Frown,
     Asteroid,
     Revolver,
     Smile,
     Crewmate,
-    Star
+    Star,
+    Halo
 };
 
 enum class ClockHand { Second, Minute, Hour };
@@ -43,8 +44,6 @@ DrawBody bodyDrawFn(Body b);
 
 class Planet {
    public:
-    int parent;
-
     float distFromRef;
     float angularSpeed;
     float angle;
@@ -66,8 +65,9 @@ class Planet {
     Body body;
     DrawBody draw;
 
+    std::vector<Planet> subplanets;
+
     Planet() {
-        parent = -1;
         distFromRef = 0;
         angularSpeed = 0;
         angle = 0;
@@ -308,14 +308,22 @@ void drawCrewmateBody(const Planet& p) {
     glPopMatrix();
 }
 
+void drawHaloBody(const Planet& p) {
+    float bob = p.size * 0.15f * sin(p.spin * PI / 180);
+
+    glTranslatef(0, bob, 0);
+    drawHalo(p.size, p.size * p.aspect, p.size * 0.15f, p.color, p.alpha);
+}
+
 void drawStarBody(const Planet& p) {
     glRotatef(p.spin, 0, 0, 1);
     drawStar(p.size, p.color, p.alpha);
 }
 
-void drawKnockedOutBody(const Planet& p) {
+void drawFrownBody(const Planet& p) {
     GLfloat featureColor[3] = {0.1f, 0.1f, 0.1f};
 
+    glPushMatrix();
     glRotatef(12.0f * sin(p.spin * PI / 180), 0, 0, 1); // head roll
 
     drawCircle(p.size, p.color, p.alpha);
@@ -335,45 +343,68 @@ void drawKnockedOutBody(const Planet& p) {
     drawArc(p.size * 0.42f, p.size * 0.12f, PI / 9, 8 * PI / 9, featureColor,
             p.alpha);
     glPopMatrix();
+
+    glPopMatrix();
+
+    for (int i = 0; i < p.subplanets.size(); i++) {
+        const Planet& s = p.subplanets[i];
+
+        if (s.size <= 0 || s.draw == nullptr)
+            continue;
+
+        float orbitX, orbitY;
+        getOrbitPosition(s, orbitX, orbitY);
+
+        glPushMatrix();
+        glTranslatef(orbitX, orbitY, 0);
+        s.draw(s);
+        glPopMatrix();
+    }
 }
 
 void drawSmileBody(const Planet& p) {
     GLfloat featureColor[3] = {0.1f, 0.1f, 0.1f};
-    GLfloat haloColor[3] = {1.0f, 0.88f, 0.35f};
 
     drawCircle(p.size, p.color, p.alpha);
 
     glPushMatrix();
     glTranslatef(-p.size * 0.35f, p.size * 0.30f, 0);
-    drawCircle(p.size * 0.11f, featureColor, p.alpha);
+    drawCircle(p.size * 0.1f, featureColor, p.alpha);
     glPopMatrix();
 
     glPushMatrix();
     glTranslatef(p.size * 0.35f, p.size * 0.30f, 0);
-    drawCircle(p.size * 0.11f, featureColor, p.alpha);
+    drawCircle(p.size * 0.1f, featureColor, p.alpha);
     glPopMatrix();
 
     glPushMatrix();
     glTranslatef(0, -p.size * 0.10f, 0);
-    drawArc(p.size * 0.45f, p.size * 0.11f, PI + PI / 6, 2 * PI - PI / 6,
+    drawArc(p.size * 0.45f, p.size * 0.1f, PI + PI / 6, 2 * PI - PI / 6,
             featureColor, p.alpha);
     glPopMatrix();
 
-    float bob = p.size * 0.10f * sin(p.spin * PI / 180);
+    for (int i = 0; i < p.subplanets.size(); i++) {
+        const Planet& s = p.subplanets[i];
 
-    glPushMatrix();
-    glTranslatef(0, p.size * 1.30f + bob, 0);
-    drawHalo(p.size * 0.70f, p.size * 0.26f, p.size * 0.09f, haloColor,
-             p.alpha);
-    glPopMatrix();
+        if (s.size <= 0 || s.draw == nullptr)
+            continue;
+
+        float orbitX, orbitY;
+        getOrbitPosition(s, orbitX, orbitY);
+
+        glPushMatrix();
+        glTranslatef(orbitX, orbitY, 0);
+        s.draw(s);
+        glPopMatrix();
+    }
 }
 
 DrawBody bodyDrawFn(Body b) {
     switch (b) {
         case Body::Sun:
             return drawSunBody;
-        case Body::KnockedOut:
-            return drawKnockedOutBody;
+        case Body::Frown:
+            return drawFrownBody;
         case Body::Asteroid:
             return drawAsteroidBody;
         case Body::Revolver:
@@ -384,14 +415,14 @@ DrawBody bodyDrawFn(Body b) {
             return drawCrewmateBody;
         case Body::Star:
             return drawStarBody;
+        case Body::Halo:
+            return drawHaloBody;
     }
 
     return nullptr;
 }
 
-void drawPlanetTree(int index) {
-    const Planet& p = planetList[index];
-
+void drawPlanet(const Planet& p) {
     if (p.size <= 0 || p.draw == nullptr)
         return;
 
@@ -400,16 +431,7 @@ void drawPlanetTree(int index) {
 
     glPushMatrix();
     glTranslatef(orbitX, orbitY, 0);
-
-    glPushMatrix();
     p.draw(p);
-    glPopMatrix();
-
-    for (int i = 0; i < (int)planetList.size(); i++) {
-        if (planetList[i].parent == index)
-            drawPlanetTree(i);
-    }
-
     glPopMatrix();
 }
 
@@ -429,7 +451,7 @@ void generatePlanets() {
 
     // knocked-out face on elliptical orbit
     Planet face;
-    face.setBody(Body::KnockedOut);
+    face.setBody(Body::Frown);
     face.distFromRef = 6.0;
     face.angularSpeed = 2.5;
     face.color[0] = 0.95;
@@ -439,7 +461,7 @@ void generatePlanets() {
     face.orbitAspect = 0.5;
     face.orbitTiltSpeed = 1.5;
     face.spinSpeed = 7;
-    int faceIndex = (int)planetList.size();
+    int faceIndex = planetList.size();
     planetList.push_back(face);
 
     // asteroid vertical orbit
@@ -482,7 +504,20 @@ void generatePlanets() {
     smile.size = 0.75;
     smile.orbitAspect = 1.6;
     smile.orbitTiltSpeed = -2.0;
-    smile.spinSpeed = 9;  
+    smile.spinSpeed = 9;
+
+    Planet halo;
+    halo.setBody(Body::Halo);
+    halo.distFromRef = 0;
+    halo.orbitCenterY = smile.size * 1.30f;
+    halo.color[0] = 1.0f;
+    halo.color[1] = 0.88f;
+    halo.color[2] = 0.35f;
+    halo.size = smile.size * 0.70f;
+    halo.aspect = 0.371f;
+    halo.spinSpeed = 9;
+    smile.subplanets.push_back(halo);
+
     planetList.push_back(smile);
 
     const int crewmatePaletteSize = 3;
@@ -510,11 +545,10 @@ void generatePlanets() {
                                                {1.000f, 0.750f, 0.850f},
                                                {0.700f, 0.900f, 1.000f}};
 
+    auto& facePlanet = planetList[faceIndex];
     for (int i = 0; i < numStars; i++) {
         Planet star;
-
         star.setBody(Body::Star);
-        star.parent = faceIndex;
         star.speedFromParentHeight = true;
         star.distFromRef = 1.9f;
         star.angularSpeed = -6.0f;  // clockwise
@@ -524,7 +558,7 @@ void generatePlanets() {
         star.size = 0.30f;
         star.angle = i * 360.0f / numStars;
         star.spinSpeed = 8;
-        planetList.push_back(star);
+        facePlanet.subplanets.push_back(star);
     }
 }
 
@@ -558,10 +592,8 @@ void display(void) {
     glTranslatef(tx, ty, 0);
     glRotatef(alpha, 0, 0, 1);
 
-    for (int i = 0; i < (int)planetList.size(); i++) {
-        if (planetList[i].parent < 0)
-            drawPlanetTree(i);
-    }
+    for (int i = 0; i < (int)planetList.size(); i++)
+        drawPlanet(planetList[i]);
 
     glPopMatrix();
     glFlush();
@@ -574,24 +606,33 @@ void idle() {
         timeinfo = localtime(&seconds);
     }
 
-    for (int i = 0; i < (int)planetList.size(); i++) {
+    for (int i = 0; i < planetList.size(); i++) {
         Planet& p = planetList[i];
 
         p.alpha = 1;
 
-        if (clockMode && p.parent < 0) {
+        if (clockMode) {
             p.angle = ((float)timeinfo->tm_sec) * 6;
         } else {
-            float speed = p.angularSpeed;
-
-            if (p.speedFromParentHeight && p.parent >= 0)
-                speed *= parentHeightFactor(planetList[p.parent]);
-
-            p.angle += speed * timer;
+            p.angle += p.angularSpeed * timer;
         }
 
         p.spin += p.spinSpeed * timer;
         p.orbitTilt += p.orbitTiltSpeed * timer;
+
+        for (int j = 0; j < p.subplanets.size(); j++) {
+            Planet& s = p.subplanets[j];
+
+            float speed = s.angularSpeed;
+
+            if (s.speedFromParentHeight)
+                speed *= parentHeightFactor(p);
+
+            s.alpha = 1;
+            s.angle += speed * timer;
+            s.spin += s.spinSpeed * timer;
+            s.orbitTilt += s.orbitTiltSpeed * timer;
+        }
     }
 
     glutPostRedisplay();
