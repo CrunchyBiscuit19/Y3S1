@@ -29,10 +29,10 @@ using DrawBody = void (*)(const Planet&);
 
 enum class Body {
     Sun,
-    KnockedOutFace,
+    KnockedOut,
     Asteroid,
     Revolver,
-    Angel,
+    Smile,
     Crewmate,
     Star
 };
@@ -107,13 +107,15 @@ time_t seconds = 0;
 struct tm* timeinfo;
 float timer = 1;
 
+// Helper
+
 void getOrbitPosition(const Planet& p, float& orbitX, float& orbitY) {
     float orbitAngle = p.angle * PI / 180;
     float localX = p.orbitCenterX + p.distFromRef * -sin(orbitAngle);
     float localY =
         p.orbitCenterY + p.distFromRef * p.orbitAspect * cos(orbitAngle);
 
-    // spin the orbit path itself clockwise about the reference point
+    // spin the orbit path itself
     float tilt = p.orbitTilt * PI / 180;
     orbitX = localX * cos(tilt) + localY * sin(tilt);
     orbitY = -localX * sin(tilt) + localY * cos(tilt);
@@ -142,6 +144,8 @@ void shadedVertex(float x, float y, const GLfloat color[3], float alpha) {
 
     glVertex2f(x, y);
 }
+
+// Shapes
 
 void drawRectangle(float width, float height, const GLfloat color[3],
                    float alpha) {
@@ -233,6 +237,8 @@ void drawHalo(float radiusX, float radiusY, float thickness,
                     color, alpha);
 }
 
+// Planets
+
 void drawSunBody(const Planet& p) {
     glRotatef(p.spin, 0, 0, 1);
     drawCircle(p.size, p.color, p.alpha);
@@ -307,7 +313,7 @@ void drawStarBody(const Planet& p) {
     drawStar(p.size, p.color, p.alpha);
 }
 
-void drawKnockedOutFaceBody(const Planet& p) {
+void drawKnockedOutBody(const Planet& p) {
     GLfloat featureColor[3] = {0.1f, 0.1f, 0.1f};
 
     glRotatef(12.0f * sin(p.spin * PI / 180), 0, 0, 1); // head roll
@@ -324,7 +330,6 @@ void drawKnockedOutFaceBody(const Planet& p) {
     drawCross(p.size * 0.44f, p.size * 0.12f, featureColor, p.alpha);
     glPopMatrix();
 
-    // frown: upper half of an arc centred below the mouth, so the corners point down
     glPushMatrix();
     glTranslatef(0, -p.size * 0.60f, 0);
     drawArc(p.size * 0.42f, p.size * 0.12f, PI / 9, 8 * PI / 9, featureColor,
@@ -332,7 +337,7 @@ void drawKnockedOutFaceBody(const Planet& p) {
     glPopMatrix();
 }
 
-void drawAngelBody(const Planet& p) {
+void drawSmileBody(const Planet& p) {
     GLfloat featureColor[3] = {0.1f, 0.1f, 0.1f};
     GLfloat haloColor[3] = {1.0f, 0.88f, 0.35f};
 
@@ -367,14 +372,14 @@ DrawBody bodyDrawFn(Body b) {
     switch (b) {
         case Body::Sun:
             return drawSunBody;
-        case Body::KnockedOutFace:
-            return drawKnockedOutFaceBody;
+        case Body::KnockedOut:
+            return drawKnockedOutBody;
         case Body::Asteroid:
             return drawAsteroidBody;
         case Body::Revolver:
             return drawRevolverBody;
-        case Body::Angel:
-            return drawAngelBody;
+        case Body::Smile:
+            return drawSmileBody;
         case Body::Crewmate:
             return drawCrewmateBody;
         case Body::Star:
@@ -424,7 +429,7 @@ void generatePlanets() {
 
     // knocked-out face on elliptical orbit
     Planet face;
-    face.setBody(Body::KnockedOutFace);
+    face.setBody(Body::KnockedOut);
     face.distFromRef = 6.0;
     face.angularSpeed = 2.5;
     face.color[0] = 0.95;
@@ -467,18 +472,18 @@ void generatePlanets() {
     planetList.push_back(revolver);
 
     // smiling face with a bobbing halo
-    Planet angel;
-    angel.setBody(Body::Angel);
-    angel.distFromRef = 3.2;
-    angel.angularSpeed = -4.0;
-    angel.color[0] = 0.98;
-    angel.color[1] = 0.80;
-    angel.color[2] = 0.62;
-    angel.size = 0.75;
-    angel.orbitAspect = 1.6;
-    angel.orbitTiltSpeed = -2.0;
-    angel.spinSpeed = 9;  // drives the halo bob
-    planetList.push_back(angel);
+    Planet smile;
+    smile.setBody(Body::Smile);
+    smile.distFromRef = 3.2;
+    smile.angularSpeed = -4.0;
+    smile.color[0] = 0.98;
+    smile.color[1] = 0.80;
+    smile.color[2] = 0.62;
+    smile.size = 0.75;
+    smile.orbitAspect = 1.6;
+    smile.orbitTiltSpeed = -2.0;
+    smile.spinSpeed = 9;  
+    planetList.push_back(smile);
 
     const int crewmatePaletteSize = 3;
     GLfloat crewmatePalette[crewmatePaletteSize][3] = {{1.000f, 0.992f, 0.745f},
@@ -522,6 +527,8 @@ void generatePlanets() {
         planetList.push_back(star);
     }
 }
+
+// Others
 
 void reshape(int w, int h) {
     glViewport(0, 0, (GLsizei)w, (GLsizei)h);
@@ -597,7 +604,7 @@ void keyboard(unsigned char key, int x, int y) {
     //keys to control translation - tx, ty
     switch (key) {
 
-        case 27:  // press ESC to exit
+        case 27:  // ESC to exit
         case 'q':
         case 'Q':
             exit(0);
