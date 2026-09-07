@@ -87,7 +87,7 @@ bool clockMode = false;
 
 time_t seconds = 0;
 struct tm* timeinfo;
-float timer = 2;
+float timer = 1;
 
 // Helper
 
@@ -261,18 +261,18 @@ void generatePlanets() {
         drawCircle(p.size, p.color, p.alpha);
 
         glPushMatrix();
-        glTranslatef(-p.size * 0.38f, p.size * 0.32f, 0);
-        drawCross(p.size * 0.44f, p.size * 0.12f, featureColor, p.alpha);
+        glTranslatef(-p.size * 0.40f, p.size * 0.30f, 0);
+        drawCross(p.size * 0.45f, p.size * 0.10f, featureColor, p.alpha);
         glPopMatrix();
 
         glPushMatrix();
-        glTranslatef(p.size * 0.38f, p.size * 0.32f, 0);
-        drawCross(p.size * 0.44f, p.size * 0.12f, featureColor, p.alpha);
+        glTranslatef(p.size * 0.40f, p.size * 0.30f, 0);
+        drawCross(p.size * 0.45f, p.size * 0.10f, featureColor, p.alpha);
         glPopMatrix();
 
         glPushMatrix();
         glTranslatef(0, -p.size * 0.60f, 0);
-        drawArc(p.size * 0.42f, p.size * 0.12f, PI / 9, 8 * PI / 9, featureColor,
+        drawArc(p.size * 0.40f, p.size * 0.10f, PI / 9, 8 * PI / 9, featureColor,
                 p.alpha);
         glPopMatrix();
 
@@ -314,7 +314,7 @@ void generatePlanets() {
     rugby.angularSpeed = 3;
     rugby.color[0] = 0.60;
     rugby.color[1] = 0.35;
-    rugby.color[2] = 0.18;
+    rugby.color[2] = 0.20;
     rugby.size = 0.8;
     rugby.aspect = 0.55;
     rugby.orbitAspect = 1.7;
@@ -339,7 +339,7 @@ void generatePlanets() {
             glPushMatrix();
             glTranslatef(p.size * 0.55f * cos(angle), p.size * 0.55f * sin(angle),
                          0);
-            drawCircle(p.size * 0.26f, chamberColor, p.alpha);
+            drawCircle(p.size * 0.25f, chamberColor, p.alpha);
             glPopMatrix();
         }
     };
@@ -394,9 +394,9 @@ void generatePlanets() {
     };
     smile.dist = 3.2;
     smile.angularSpeed = -4.0;
-    smile.color[0] = 0.98;
+    smile.color[0] = 1.00;
     smile.color[1] = 0.80;
-    smile.color[2] = 0.62;
+    smile.color[2] = 0.60;
     smile.size = 0.75;
     smile.orbitAspect = 1.6;
     smile.orbitTiltSpeed = -2.0;
@@ -413,25 +413,25 @@ void generatePlanets() {
     halo.dist = 0;
     halo.orbitCenterY = smile.size * 1.30f;
     halo.color[0] = 1.0f;
-    halo.color[1] = 0.88f;
+    halo.color[1] = 0.90f;
     halo.color[2] = 0.35f;
     halo.size = smile.size * 0.70f;
-    halo.aspect = 0.371f;
+    halo.aspect = 0.35f;
     halo.spinSpeed = 9;
     smile.subplanets.push_back(halo);
 
     planetList.push_back(smile);
 
     const int crewmatePaletteSize = 3;
-    GLfloat crewmatePalette[crewmatePaletteSize][3] = {{1.000f, 0.992f, 0.745f},
-                                                       {0.925f, 0.459f, 0.471f},
-                                                       {0.220f, 0.886f, 0.867f}};
+    GLfloat crewmatePalette[crewmatePaletteSize][3] = {{1.000f, 1.000f, 0.750f},
+                                                       {0.950f, 0.450f, 0.450f},
+                                                       {0.200f, 0.900f, 0.850f}};
 
     for (int i = 0; i < NUM_CREWMATES; i++) {
         Planet crewmate;
 
         crewmate.draw = [](const Planet& p) {
-            GLfloat visorColor[3] = {0.584f, 0.792f, 0.863f};
+            GLfloat visorColor[3] = {0.600f, 0.800f, 0.850f};
 
             float radius = p.size;
             float body = radius * 2;
@@ -483,7 +483,7 @@ void generatePlanets() {
     }
 
     const int starPaletteSize = 3;
-    GLfloat starPalette[starPaletteSize][3] = {{1.000f, 0.960f, 0.600f},
+    GLfloat starPalette[starPaletteSize][3] = {{1.000f, 0.950f, 0.600f},
                                                {1.000f, 0.750f, 0.850f},
                                                {0.700f, 0.900f, 1.000f}};
     auto& frownPlanet = planetList[frownIndex];
@@ -627,7 +627,7 @@ void idle() {
     }
 
     glutPostRedisplay();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
 }
 
 void keyboard(unsigned char key, int x, int y) {
