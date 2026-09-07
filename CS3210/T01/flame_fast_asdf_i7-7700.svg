@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="742" onload="init(evt)" viewBox="0 0 1200 742" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="742" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="725.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="725.00"> </text><svg id="frames" x="10" width="1180" total_samples="126045314"><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::operator* (4,170,929 samples, 3.31%)</title><rect x="0.0000%" y="645" width="3.3091%" height="15" fill="rgb(227,0,7)" fg:x="0" fg:w="4170929"/><text x="0.2500%" y="655.50">__g..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::operator-- (4,094,922 samples, 3.25%)</title><rect x="3.3091%" y="645" width="3.2488%" height="15" fill="rgb(217,0,24)" fg:x="4170929" fg:w="4094922"/><text x="3.5591%" y="655.50">__g..</text></g><g><title>[[stack]] (12,334,908 samples, 9.79%)</title><rect x="0.0000%" y="661" width="9.7861%" height="15" fill="rgb(221,193,54)" fg:x="0" fg:w="12334908"/><text x="0.2500%" y="671.50">[[stack]]</text></g><g><title>std::remove_reference&lt;int&amp;&gt;::type&amp;&amp; std::move&lt;int&amp;&gt; (4,069,057 samples, 3.23%)</title><rect x="6.5578%" y="645" width="3.2282%" height="15" fill="rgb(248,212,6)" fg:x="8265851" fg:w="4069057"/><text x="6.8078%" y="655.50">std..</text></g><g><title>bool __gnu_cxx::__ops::_Val_less_iter::operator (4,164,140 samples, 3.30%)</title><rect x="13.0781%" y="501" width="3.3037%" height="15" fill="rgb(208,68,35)" fg:x="16484303" fg:w="4164140"/><text x="13.3281%" y="511.50">boo..</text></g><g><title>void std::__final_insertion_sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,301,580 samples, 9.76%)</title><rect x="9.7861%" y="549" width="9.7596%" height="15" fill="rgb(232,128,0)" fg:x="12334908" fg:w="12301580"/><text x="10.0361%" y="559.50">void std::__fi..</text></g><g><title>void std::__unguarded_insertion_sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,301,580 samples, 9.76%)</title><rect x="9.7861%" y="533" width="9.7596%" height="15" fill="rgb(207,160,47)" fg:x="12334908" fg:w="12301580"/><text x="10.0361%" y="543.50">void std::__un..</text></g><g><title>void std::__unguarded_linear_insert&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Val_less_iter&gt; (12,301,580 samples, 9.76%)</title><rect x="9.7861%" y="517" width="9.7596%" height="15" fill="rgb(228,23,34)" fg:x="12334908" fg:w="12301580"/><text x="10.0361%" y="527.50">void std::__un..</text></g><g><title>std::remove_reference&lt;int&amp;&gt;::type&amp;&amp; std::move&lt;int&amp;&gt; (3,988,045 samples, 3.16%)</title><rect x="16.3818%" y="501" width="3.1640%" height="15" fill="rgb(218,30,26)" fg:x="20648443" fg:w="3988045"/><text x="16.6318%" y="511.50">std..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (11,346,489 samples, 9.00%)</title><rect x="19.5457%" y="533" width="9.0019%" height="15" fill="rgb(220,122,19)" fg:x="24636488" fg:w="11346489"/><text x="19.7957%" y="543.50">__gnu_cxx::__..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (11,346,489 samples, 9.00%)</title><rect x="19.5457%" y="517" width="9.0019%" height="15" fill="rgb(250,228,42)" fg:x="24636488" fg:w="11346489"/><text x="19.7957%" y="527.50">__gnu_cxx::__..</text></g><g><title>bool __gnu_cxx::__ops::_Iter_less_iter::operator (7,822,496 samples, 6.21%)</title><rect x="22.3416%" y="501" width="6.2061%" height="15" fill="rgb(240,193,28)" fg:x="28160481" fg:w="7822496"/><text x="22.5916%" y="511.50">bool __g..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::operator* (3,930,262 samples, 3.12%)</title><rect x="31.8078%" y="485" width="3.1181%" height="15" fill="rgb(216,20,37)" fg:x="40092199" fg:w="3930262"/><text x="32.0578%" y="495.50">__g..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::operator++ (4,139,159 samples, 3.28%)</title><rect x="34.9259%" y="485" width="3.2839%" height="15" fill="rgb(206,188,39)" fg:x="44022461" fg:w="4139159"/><text x="35.1759%" y="495.50">__g..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (16,017,932 samples, 12.71%)</title><rect x="28.5477%" y="517" width="12.7081%" height="15" fill="rgb(217,207,13)" fg:x="35982977" fg:w="16017932"/><text x="28.7977%" y="527.50">__gnu_cxx::__normal..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (16,017,932 samples, 12.71%)</title><rect x="28.5477%" y="501" width="12.7081%" height="15" fill="rgb(231,73,38)" fg:x="35982977" fg:w="16017932"/><text x="28.7977%" y="511.50">__gnu_cxx::__normal..</text></g><g><title>bool __gnu_cxx::operator&lt; &lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;) (3,839,289 samples, 3.05%)</title><rect x="38.2098%" y="485" width="3.0460%" height="15" fill="rgb(225,20,46)" fg:x="48161620" fg:w="3839289"/><text x="38.4598%" y="495.50">boo..</text></g><g><title>bool __gnu_cxx::operator&lt; &lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;) (3,910,919 samples, 3.10%)</title><rect x="44.5329%" y="469" width="3.1028%" height="15" fill="rgb(210,31,41)" fg:x="56131622" fg:w="3910919"/><text x="44.7829%" y="479.50">boo..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::base (3,910,919 samples, 3.10%)</title><rect x="44.5329%" y="453" width="3.1028%" height="15" fill="rgb(221,200,47)" fg:x="56131622" fg:w="3910919"/><text x="44.7829%" y="463.50">__g..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,200,542 samples, 9.68%)</title><rect x="41.2557%" y="501" width="9.6795%" height="15" fill="rgb(226,26,5)" fg:x="52000909" fg:w="12200542"/><text x="41.5057%" y="511.50">__gnu_cxx::__n..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,200,542 samples, 9.68%)</title><rect x="41.2557%" y="485" width="9.6795%" height="15" fill="rgb(249,33,26)" fg:x="52000909" fg:w="12200542"/><text x="41.5057%" y="495.50">__gnu_cxx::__n..</text></g><g><title>void std::iter_swap&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (4,158,910 samples, 3.30%)</title><rect x="47.6357%" y="469" width="3.2995%" height="15" fill="rgb(235,183,28)" fg:x="60042541" fg:w="4158910"/><text x="47.8857%" y="479.50">voi..</text></g><g><title>std::enable_if&lt;std::__and_&lt;std::__not_&lt;std::__is_tuple_like&lt;int&gt; &gt;, std::is_move_constructible&lt;int&gt;, std::is_move_assignable&lt;int&gt; &gt;::value, void&gt;::type std::swap&lt;int&gt; (4,158,910 samples, 3.30%)</title><rect x="47.6357%" y="453" width="3.2995%" height="15" fill="rgb(221,5,38)" fg:x="60042541" fg:w="4158910"/><text x="47.8857%" y="463.50">std..</text></g><g><title>bool __gnu_cxx::operator&lt; &lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;) (4,084,071 samples, 3.24%)</title><rect x="54.2213%" y="453" width="3.2402%" height="15" fill="rgb(247,18,42)" fg:x="68343352" fg:w="4084071"/><text x="54.4713%" y="463.50">boo..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,381,015 samples, 9.82%)</title><rect x="50.9352%" y="485" width="9.8227%" height="15" fill="rgb(241,131,45)" fg:x="64201451" fg:w="12381015"/><text x="51.1852%" y="495.50">__gnu_cxx::__n..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,381,015 samples, 9.82%)</title><rect x="50.9352%" y="469" width="9.8227%" height="15" fill="rgb(249,31,29)" fg:x="64201451" fg:w="12381015"/><text x="51.1852%" y="479.50">__gnu_cxx::__n..</text></g><g><title>void std::iter_swap&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (4,155,043 samples, 3.30%)</title><rect x="57.4614%" y="453" width="3.2965%" height="15" fill="rgb(225,111,53)" fg:x="72427423" fg:w="4155043"/><text x="57.7114%" y="463.50">voi..</text></g><g><title>std::enable_if&lt;std::__and_&lt;std::__not_&lt;std::__is_tuple_like&lt;int&gt; &gt;, std::is_move_constructible&lt;int&gt;, std::is_move_assignable&lt;int&gt; &gt;::value, void&gt;::type std::swap&lt;int&gt; (4,155,043 samples, 3.30%)</title><rect x="57.4614%" y="437" width="3.2965%" height="15" fill="rgb(238,160,17)" fg:x="72427423" fg:w="4155043"/><text x="57.7114%" y="447.50">std..</text></g><g><title>bool __gnu_cxx::operator&lt; &lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; const&amp;) (4,144,194 samples, 3.29%)</title><rect x="60.7579%" y="437" width="3.2879%" height="15" fill="rgb(214,148,48)" fg:x="76582466" fg:w="4144194"/><text x="61.0079%" y="447.50">boo..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,190,597 samples, 6.50%)</title><rect x="60.7579%" y="469" width="6.4981%" height="15" fill="rgb(232,36,49)" fg:x="76582466" fg:w="8190597"/><text x="61.0079%" y="479.50">__gnu_cxx..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,190,597 samples, 6.50%)</title><rect x="60.7579%" y="453" width="6.4981%" height="15" fill="rgb(209,103,24)" fg:x="76582466" fg:w="8190597"/><text x="61.0079%" y="463.50">__gnu_cxx..</text></g><g><title>void std::iter_swap&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (4,046,403 samples, 3.21%)</title><rect x="64.0457%" y="437" width="3.2103%" height="15" fill="rgb(229,88,8)" fg:x="80726660" fg:w="4046403"/><text x="64.2957%" y="447.50">voi..</text></g><g><title>std::enable_if&lt;std::__and_&lt;std::__not_&lt;std::__is_tuple_like&lt;int&gt; &gt;, std::is_move_constructible&lt;int&gt;, std::is_move_assignable&lt;int&gt; &gt;::value, void&gt;::type std::swap&lt;int&gt; (4,046,403 samples, 3.21%)</title><rect x="64.0457%" y="421" width="3.2103%" height="15" fill="rgb(213,181,19)" fg:x="80726660" fg:w="4046403"/><text x="64.2957%" y="431.50">std..</text></g><g><title>std::remove_reference&lt;int&amp;&gt;::type&amp;&amp; std::move&lt;int&amp;&gt; (4,046,403 samples, 3.21%)</title><rect x="64.0457%" y="405" width="3.2103%" height="15" fill="rgb(254,191,54)" fg:x="80726660" fg:w="4046403"/><text x="64.2957%" y="415.50">std..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,219,455 samples, 6.52%)</title><rect x="67.2560%" y="437" width="6.5210%" height="15" fill="rgb(241,83,37)" fg:x="84773063" fg:w="8219455"/><text x="67.5060%" y="447.50">__gnu_cxx..</text></g><g><title>void std::iter_swap&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (4,067,020 samples, 3.23%)</title><rect x="70.5504%" y="421" width="3.2266%" height="15" fill="rgb(233,36,39)" fg:x="88925498" fg:w="4067020"/><text x="70.8004%" y="431.50">voi..</text></g><g><title>std::enable_if&lt;std::__and_&lt;std::__not_&lt;std::__is_tuple_like&lt;int&gt; &gt;, std::is_move_constructible&lt;int&gt;, std::is_move_assignable&lt;int&gt; &gt;::value, void&gt;::type std::swap&lt;int&gt; (4,067,020 samples, 3.23%)</title><rect x="70.5504%" y="405" width="3.2266%" height="15" fill="rgb(226,3,54)" fg:x="88925498" fg:w="4067020"/><text x="70.8004%" y="415.50">std..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,299,033 samples, 9.76%)</title><rect x="67.2560%" y="453" width="9.7576%" height="15" fill="rgb(245,192,40)" fg:x="84773063" fg:w="12299033"/><text x="67.5060%" y="463.50">__gnu_cxx::__n..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::difference_type __gnu_cxx::operator-&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; (4,079,578 samples, 3.24%)</title><rect x="73.7771%" y="437" width="3.2366%" height="15" fill="rgb(238,167,29)" fg:x="92992518" fg:w="4079578"/><text x="74.0271%" y="447.50">__g..</text></g><g><title>fast_sort (96,936,860 samples, 76.91%)</title><rect x="9.7861%" y="597" width="76.9064%" height="15" fill="rgb(232,182,51)" fg:x="12334908" fg:w="96936860"/><text x="10.0361%" y="607.50">fast_sort</text></g><g><title>void std::sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (96,936,860 samples, 76.91%)</title><rect x="9.7861%" y="581" width="76.9064%" height="15" fill="rgb(231,60,39)" fg:x="12334908" fg:w="96936860"/><text x="10.0361%" y="591.50">void std::sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt;</text></g><g><title>void std::__sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (96,936,860 samples, 76.91%)</title><rect x="9.7861%" y="565" width="76.9064%" height="15" fill="rgb(208,69,12)" fg:x="12334908" fg:w="96936860"/><text x="10.0361%" y="575.50">void std::__sort&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt;</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (84,635,280 samples, 67.15%)</title><rect x="19.5457%" y="549" width="67.1467%" height="15" fill="rgb(235,93,37)" fg:x="24636488" fg:w="84635280"/><text x="19.7957%" y="559.50">void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, _..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (73,288,791 samples, 58.14%)</title><rect x="28.5477%" y="533" width="58.1448%" height="15" fill="rgb(213,116,39)" fg:x="35982977" fg:w="73288791"/><text x="28.7977%" y="543.50">void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;in..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (57,270,859 samples, 45.44%)</title><rect x="41.2557%" y="517" width="45.4367%" height="15" fill="rgb(222,207,29)" fg:x="52000909" fg:w="57270859"/><text x="41.5057%" y="527.50">void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;i..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (45,070,317 samples, 35.76%)</title><rect x="50.9352%" y="501" width="35.7572%" height="15" fill="rgb(206,96,30)" fg:x="64201451" fg:w="45070317"/><text x="51.1852%" y="511.50">void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;in..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (32,689,302 samples, 25.93%)</title><rect x="60.7579%" y="485" width="25.9346%" height="15" fill="rgb(218,138,4)" fg:x="76582466" fg:w="32689302"/><text x="61.0079%" y="495.50">void std::__introsort_loop&lt;__gnu_cxx::__n..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (24,498,705 samples, 19.44%)</title><rect x="67.2560%" y="469" width="19.4364%" height="15" fill="rgb(250,191,14)" fg:x="84773063" fg:w="24498705"/><text x="67.5060%" y="479.50">void std::__introsort_loop&lt;__g..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,199,672 samples, 9.68%)</title><rect x="77.0136%" y="453" width="9.6788%" height="15" fill="rgb(239,60,40)" fg:x="97072096" fg:w="12199672"/><text x="77.2636%" y="463.50">void std::__in..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (12,199,672 samples, 9.68%)</title><rect x="77.0136%" y="437" width="9.6788%" height="15" fill="rgb(206,27,48)" fg:x="97072096" fg:w="12199672"/><text x="77.2636%" y="447.50">void std::__in..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,206,921 samples, 6.51%)</title><rect x="80.1814%" y="421" width="6.5111%" height="15" fill="rgb(225,35,8)" fg:x="101064847" fg:w="8206921"/><text x="80.4314%" y="431.50">void std:..</text></g><g><title>void std::__introsort_loop&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, long, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,206,921 samples, 6.51%)</title><rect x="80.1814%" y="405" width="6.5111%" height="15" fill="rgb(250,213,24)" fg:x="101064847" fg:w="8206921"/><text x="80.4314%" y="415.50">void std:..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition_pivot&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,206,921 samples, 6.51%)</title><rect x="80.1814%" y="389" width="6.5111%" height="15" fill="rgb(247,123,22)" fg:x="101064847" fg:w="8206921"/><text x="80.4314%" y="399.50">__gnu_cxx..</text></g><g><title>__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; std::__unguarded_partition&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__ops::_Iter_less_iter&gt; (8,206,921 samples, 6.51%)</title><rect x="80.1814%" y="373" width="6.5111%" height="15" fill="rgb(231,138,38)" fg:x="101064847" fg:w="8206921"/><text x="80.4314%" y="383.50">__gnu_cxx..</text></g><g><title>void std::iter_swap&lt;__gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;, __gnu_cxx::__normal_iterator&lt;int*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt; (4,146,666 samples, 3.29%)</title><rect x="83.4026%" y="357" width="3.2898%" height="15" fill="rgb(231,145,46)" fg:x="105125102" fg:w="4146666"/><text x="83.6526%" y="367.50">voi..</text></g><g><title>std::enable_if&lt;std::__and_&lt;std::__not_&lt;std::__is_tuple_like&lt;int&gt; &gt;, std::is_move_constructible&lt;int&gt;, std::is_move_assignable&lt;int&gt; &gt;::value, void&gt;::type std::swap&lt;int&gt; (4,146,666 samples, 3.29%)</title><rect x="83.4026%" y="341" width="3.2898%" height="15" fill="rgb(251,118,11)" fg:x="105125102" fg:w="4146666"/><text x="83.6526%" y="351.50">std..</text></g><g><title>rand (6,297,975 samples, 5.00%)</title><rect x="86.6924%" y="581" width="4.9966%" height="15" fill="rgb(217,147,25)" fg:x="109271768" fg:w="6297975"/><text x="86.9424%" y="591.50">rand</text></g><g><title>__random (6,297,975 samples, 5.00%)</title><rect x="86.6924%" y="565" width="4.9966%" height="15" fill="rgb(247,81,37)" fg:x="109271768" fg:w="6297975"/><text x="86.9424%" y="575.50">__rand..</text></g><g><title>__random_r (2,948,804 samples, 2.34%)</title><rect x="89.3496%" y="549" width="2.3395%" height="15" fill="rgb(209,12,38)" fg:x="112620939" fg:w="2948804"/><text x="89.5996%" y="559.50">_..</text></g><g><title>generateLargeArray (8,652,932 samples, 6.86%)</title><rect x="86.6924%" y="597" width="6.8649%" height="15" fill="rgb(227,1,9)" fg:x="109271768" fg:w="8652932"/><text x="86.9424%" y="607.50">generateL..</text></g><g><title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::vector (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="581" width="1.8683%" height="15" fill="rgb(248,47,43)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="591.50">s..</text></g><g><title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::_M_default_initialize (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="565" width="1.8683%" height="15" fill="rgb(221,10,30)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="575.50">s..</text></g><g><title>int* std::__uninitialized_default_n_a&lt;int*, unsigned long, int&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="549" width="1.8683%" height="15" fill="rgb(210,229,1)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="559.50">i..</text></g><g><title>int* std::__uninitialized_default_n&lt;int*, unsigned long&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="533" width="1.8683%" height="15" fill="rgb(222,148,37)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="543.50">i..</text></g><g><title>int* std::__uninitialized_default_n_1&lt;true&gt;::__uninit_default_n&lt;int*, unsigned long&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="517" width="1.8683%" height="15" fill="rgb(234,67,33)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="527.50">i..</text></g><g><title>int* std::fill_n&lt;int*, unsigned long, int&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="501" width="1.8683%" height="15" fill="rgb(247,98,35)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="511.50">i..</text></g><g><title>int* std::__fill_n_a&lt;int*, unsigned long, int&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="485" width="1.8683%" height="15" fill="rgb(247,138,52)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="495.50">i..</text></g><g><title>void std::__fill_a&lt;int*, int&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="469" width="1.8683%" height="15" fill="rgb(213,79,30)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="479.50">v..</text></g><g><title>__gnu_cxx::__enable_if&lt;std::__is_scalar&lt;int&gt;::__value, void&gt;::__type std::__fill_a1&lt;int*, int&gt; (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="453" width="1.8683%" height="15" fill="rgb(246,177,23)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="463.50">_..</text></g><g><title>asm_exc_page_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="437" width="1.8683%" height="15" fill="rgb(230,62,27)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="447.50">a..</text></g><g><title>exc_page_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="421" width="1.8683%" height="15" fill="rgb(216,154,8)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="431.50">e..</text></g><g><title>do_user_addr_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="405" width="1.8683%" height="15" fill="rgb(244,35,45)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="415.50">d..</text></g><g><title>handle_mm_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="389" width="1.8683%" height="15" fill="rgb(251,115,12)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="399.50">h..</text></g><g><title>__handle_mm_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="373" width="1.8683%" height="15" fill="rgb(240,54,50)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="383.50">_..</text></g><g><title>handle_pte_fault (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="357" width="1.8683%" height="15" fill="rgb(233,84,52)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="367.50">h..</text></g><g><title>do_anonymous_page (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="341" width="1.8683%" height="15" fill="rgb(207,117,47)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="351.50">d..</text></g><g><title>__pte_offset_map_lock (2,354,957 samples, 1.87%)</title><rect x="91.6890%" y="325" width="1.8683%" height="15" fill="rgb(249,43,39)" fg:x="115569743" fg:w="2354957"/><text x="91.9390%" y="335.50">_..</text></g><g><title>__libc_start_main_impl (109,530,804 samples, 86.90%)</title><rect x="9.7861%" y="645" width="86.8980%" height="15" fill="rgb(209,38,44)" fg:x="12334908" fg:w="109530804"/><text x="10.0361%" y="655.50">__libc_start_main_impl</text></g><g><title>__libc_start_call_main (109,530,804 samples, 86.90%)</title><rect x="9.7861%" y="629" width="86.8980%" height="15" fill="rgb(236,212,23)" fg:x="12334908" fg:w="109530804"/><text x="10.0361%" y="639.50">__libc_start_call_main</text></g><g><title>main (109,530,804 samples, 86.90%)</title><rect x="9.7861%" y="613" width="86.8980%" height="15" fill="rgb(242,79,21)" fg:x="12334908" fg:w="109530804"/><text x="10.0361%" y="623.50">main</text></g><g><title>std::basic_ostream&lt;char, std::char_traits&lt;char&gt; &gt;&amp; std::operator&lt;&lt; &lt;std::char_traits&lt;char&gt; &gt;(std::basic_ostream&lt;char, std::char_traits&lt;char&gt; &gt;&amp;, char const*) (3,941,012 samples, 3.13%)</title><rect x="93.5574%" y="597" width="3.1267%" height="15" fill="rgb(211,96,35)" fg:x="117924700" fg:w="3941012"/><text x="93.8074%" y="607.50">std..</text></g><g><title>std::basic_ostream&lt;char, std::char_traits&lt;char&gt; &gt;&amp; std::__ostream_insert&lt;char, std::char_traits&lt;char&gt; &gt; (3,941,012 samples, 3.13%)</title><rect x="93.5574%" y="581" width="3.1267%" height="15" fill="rgb(253,215,40)" fg:x="117924700" fg:w="3941012"/><text x="93.8074%" y="591.50">std..</text></g><g><title>__GI__IO_fwrite (3,941,012 samples, 3.13%)</title><rect x="93.5574%" y="565" width="3.1267%" height="15" fill="rgb(211,81,21)" fg:x="117924700" fg:w="3941012"/><text x="93.8074%" y="575.50">__G..</text></g><g><title>__irqentry_text_end (3,941,012 samples, 3.13%)</title><rect x="93.5574%" y="549" width="3.1267%" height="15" fill="rgb(208,190,38)" fg:x="117924700" fg:w="3941012"/><text x="93.8074%" y="559.50">__i..</text></g><g><title>__GI___tunables_init (501,504 samples, 0.40%)</title><rect x="96.6840%" y="597" width="0.3979%" height="15" fill="rgb(235,213,38)" fg:x="121865712" fg:w="501504"/><text x="96.9340%" y="607.50"></text></g><g><title>_dl_map_object_deps (1,520,514 samples, 1.21%)</title><rect x="97.0819%" y="581" width="1.2063%" height="15" fill="rgb(237,122,38)" fg:x="122367216" fg:w="1520514"/><text x="97.3319%" y="591.50"></text></g><g><title>__GI__dl_catch_exception (1,520,514 samples, 1.21%)</title><rect x="97.0819%" y="565" width="1.2063%" height="15" fill="rgb(244,218,35)" fg:x="122367216" fg:w="1520514"/><text x="97.3319%" y="575.50"></text></g><g><title>openaux (1,520,514 samples, 1.21%)</title><rect x="97.0819%" y="549" width="1.2063%" height="15" fill="rgb(240,68,47)" fg:x="122367216" fg:w="1520514"/><text x="97.3319%" y="559.50"></text></g><g><title>_dl_map_object (1,520,514 samples, 1.21%)</title><rect x="97.0819%" y="533" width="1.2063%" height="15" fill="rgb(210,16,53)" fg:x="122367216" fg:w="1520514"/><text x="97.3319%" y="543.50"></text></g><g><title>_dl_map_object_from_fd (578,132 samples, 0.46%)</title><rect x="97.8296%" y="517" width="0.4587%" height="15" fill="rgb(235,124,12)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="527.50"></text></g><g><title>_dl_map_segments (578,132 samples, 0.46%)</title><rect x="97.8296%" y="501" width="0.4587%" height="15" fill="rgb(224,169,11)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="511.50"></text></g><g><title>__mmap64 (578,132 samples, 0.46%)</title><rect x="97.8296%" y="485" width="0.4587%" height="15" fill="rgb(250,166,2)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="495.50"></text></g><g><title>__mmap64 (578,132 samples, 0.46%)</title><rect x="97.8296%" y="469" width="0.4587%" height="15" fill="rgb(242,216,29)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="479.50"></text></g><g><title>entry_SYSCALL_64_after_hwframe (578,132 samples, 0.46%)</title><rect x="97.8296%" y="453" width="0.4587%" height="15" fill="rgb(230,116,27)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="463.50"></text></g><g><title>do_syscall_64 (578,132 samples, 0.46%)</title><rect x="97.8296%" y="437" width="0.4587%" height="15" fill="rgb(228,99,48)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="447.50"></text></g><g><title>x64_sys_call (578,132 samples, 0.46%)</title><rect x="97.8296%" y="421" width="0.4587%" height="15" fill="rgb(253,11,6)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="431.50"></text></g><g><title>__x64_sys_mmap (578,132 samples, 0.46%)</title><rect x="97.8296%" y="405" width="0.4587%" height="15" fill="rgb(247,143,39)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="415.50"></text></g><g><title>ksys_mmap_pgoff (578,132 samples, 0.46%)</title><rect x="97.8296%" y="389" width="0.4587%" height="15" fill="rgb(236,97,10)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="399.50"></text></g><g><title>vm_mmap_pgoff (578,132 samples, 0.46%)</title><rect x="97.8296%" y="373" width="0.4587%" height="15" fill="rgb(233,208,19)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="383.50"></text></g><g><title>do_mmap (578,132 samples, 0.46%)</title><rect x="97.8296%" y="357" width="0.4587%" height="15" fill="rgb(216,164,2)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="367.50"></text></g><g><title>mmap_region (578,132 samples, 0.46%)</title><rect x="97.8296%" y="341" width="0.4587%" height="15" fill="rgb(220,129,5)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="351.50"></text></g><g><title>__mmap_region (578,132 samples, 0.46%)</title><rect x="97.8296%" y="325" width="0.4587%" height="15" fill="rgb(242,17,10)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="335.50"></text></g><g><title>mas_preallocate (578,132 samples, 0.46%)</title><rect x="97.8296%" y="309" width="0.4587%" height="15" fill="rgb(242,107,0)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="319.50"></text></g><g><title>mas_node_count_gfp (578,132 samples, 0.46%)</title><rect x="97.8296%" y="293" width="0.4587%" height="15" fill="rgb(251,28,31)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="303.50"></text></g><g><title>mas_alloc_nodes (578,132 samples, 0.46%)</title><rect x="97.8296%" y="277" width="0.4587%" height="15" fill="rgb(233,223,10)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="287.50"></text></g><g><title>kmem_cache_alloc (578,132 samples, 0.46%)</title><rect x="97.8296%" y="261" width="0.4587%" height="15" fill="rgb(215,21,27)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="271.50"></text></g><g><title>___slab_alloc (578,132 samples, 0.46%)</title><rect x="97.8296%" y="245" width="0.4587%" height="15" fill="rgb(232,23,21)" fg:x="123309598" fg:w="578132"/><text x="98.0796%" y="255.50"></text></g><g><title>_start (113,208,902 samples, 89.82%)</title><rect x="9.7861%" y="661" width="89.8160%" height="15" fill="rgb(244,5,23)" fg:x="12334908" fg:w="113208902"/><text x="10.0361%" y="671.50">_start</text></g><g><title>_dl_start (3,678,098 samples, 2.92%)</title><rect x="96.6840%" y="645" width="2.9181%" height="15" fill="rgb(226,81,46)" fg:x="121865712" fg:w="3678098"/><text x="96.9340%" y="655.50">_d..</text></g><g><title>_dl_start_final (3,678,098 samples, 2.92%)</title><rect x="96.6840%" y="629" width="2.9181%" height="15" fill="rgb(247,70,30)" fg:x="121865712" fg:w="3678098"/><text x="96.9340%" y="639.50">_d..</text></g><g><title>_dl_sysdep_start (3,678,098 samples, 2.92%)</title><rect x="96.6840%" y="613" width="2.9181%" height="15" fill="rgb(212,68,19)" fg:x="121865712" fg:w="3678098"/><text x="96.9340%" y="623.50">_d..</text></g><g><title>dl_main (3,176,594 samples, 2.52%)</title><rect x="97.0819%" y="597" width="2.5202%" height="15" fill="rgb(240,187,13)" fg:x="122367216" fg:w="3176594"/><text x="97.3319%" y="607.50">dl..</text></g><g><title>_dl_relocate_object (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="581" width="1.3139%" height="15" fill="rgb(223,113,26)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="591.50"></text></g><g><title>elf_dynamic_do_Rela (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="565" width="1.3139%" height="15" fill="rgb(206,192,2)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="575.50"></text></g><g><title>elf_machine_rela (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="549" width="1.3139%" height="15" fill="rgb(241,108,4)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="559.50"></text></g><g><title>resolve_map (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="533" width="1.3139%" height="15" fill="rgb(247,173,49)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="543.50"></text></g><g><title>_dl_lookup_symbol_x (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="517" width="1.3139%" height="15" fill="rgb(224,114,35)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="527.50"></text></g><g><title>do_lookup_x (1,656,080 samples, 1.31%)</title><rect x="98.2882%" y="501" width="1.3139%" height="15" fill="rgb(245,159,27)" fg:x="123887730" fg:w="1656080"/><text x="98.5382%" y="511.50"></text></g><g><title>all (126,045,314 samples, 100%)</title><rect x="0.0000%" y="693" width="100.0000%" height="15" fill="rgb(245,172,44)" fg:x="0" fg:w="126045314"/><text x="0.2500%" y="703.50"></text></g><g><title>fast_asdf (126,045,314 samples, 100.00%)</title><rect x="0.0000%" y="677" width="100.0000%" height="15" fill="rgb(236,23,11)" fg:x="0" fg:w="126045314"/><text x="0.2500%" y="687.50">fast_asdf</text></g><g><title>entry_SYSCALL_64_after_hwframe (501,504 samples, 0.40%)</title><rect x="99.6021%" y="661" width="0.3979%" height="15" fill="rgb(205,117,38)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="671.50"></text></g><g><title>do_syscall_64 (501,504 samples, 0.40%)</title><rect x="99.6021%" y="645" width="0.3979%" height="15" fill="rgb(237,72,25)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="655.50"></text></g><g><title>x64_sys_call (501,504 samples, 0.40%)</title><rect x="99.6021%" y="629" width="0.3979%" height="15" fill="rgb(244,70,9)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="639.50"></text></g><g><title>__x64_sys_execve (501,504 samples, 0.40%)</title><rect x="99.6021%" y="613" width="0.3979%" height="15" fill="rgb(217,125,39)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="623.50"></text></g><g><title>do_execveat_common.isra.0 (501,504 samples, 0.40%)</title><rect x="99.6021%" y="597" width="0.3979%" height="15" fill="rgb(235,36,10)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="607.50"></text></g><g><title>bprm_execve (501,504 samples, 0.40%)</title><rect x="99.6021%" y="581" width="0.3979%" height="15" fill="rgb(251,123,47)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="591.50"></text></g><g><title>bprm_execve.part.0 (501,504 samples, 0.40%)</title><rect x="99.6021%" y="565" width="0.3979%" height="15" fill="rgb(221,13,13)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="575.50"></text></g><g><title>exec_binprm (501,504 samples, 0.40%)</title><rect x="99.6021%" y="549" width="0.3979%" height="15" fill="rgb(238,131,9)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="559.50"></text></g><g><title>search_binary_handler (501,504 samples, 0.40%)</title><rect x="99.6021%" y="533" width="0.3979%" height="15" fill="rgb(211,50,8)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="543.50"></text></g><g><title>load_elf_binary (501,504 samples, 0.40%)</title><rect x="99.6021%" y="517" width="0.3979%" height="15" fill="rgb(245,182,24)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="527.50"></text></g><g><title>elf_load (501,504 samples, 0.40%)</title><rect x="99.6021%" y="501" width="0.3979%" height="15" fill="rgb(242,14,37)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="511.50"></text></g><g><title>vm_mmap (501,504 samples, 0.40%)</title><rect x="99.6021%" y="485" width="0.3979%" height="15" fill="rgb(246,228,12)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="495.50"></text></g><g><title>vm_mmap_pgoff (501,504 samples, 0.40%)</title><rect x="99.6021%" y="469" width="0.3979%" height="15" fill="rgb(213,55,15)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="479.50"></text></g><g><title>do_mmap (501,504 samples, 0.40%)</title><rect x="99.6021%" y="453" width="0.3979%" height="15" fill="rgb(209,9,3)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="463.50"></text></g><g><title>mmap_region (501,504 samples, 0.40%)</title><rect x="99.6021%" y="437" width="0.3979%" height="15" fill="rgb(230,59,30)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="447.50"></text></g><g><title>__mmap_region (501,504 samples, 0.40%)</title><rect x="99.6021%" y="421" width="0.3979%" height="15" fill="rgb(209,121,21)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="431.50"></text></g><g><title>FhgfsOps_mmap (501,504 samples, 0.40%)</title><rect x="99.6021%" y="405" width="0.3979%" height="15" fill="rgb(220,109,13)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="415.50"></text></g><g><title>__FhgfsOps_doRefreshInode (501,504 samples, 0.40%)</title><rect x="99.6021%" y="389" width="0.3979%" height="15" fill="rgb(232,18,1)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="399.50"></text></g><g><title>FhgfsOpsRemoting_statAndGetParentInfo (501,504 samples, 0.40%)</title><rect x="99.6021%" y="373" width="0.3979%" height="15" fill="rgb(215,41,42)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="383.50"></text></g><g><title>MessagingTk_requestResponseNodeRetryAutoIntr (501,504 samples, 0.40%)</title><rect x="99.6021%" y="357" width="0.3979%" height="15" fill="rgb(224,123,36)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="367.50"></text></g><g><title>__MessagingTk_requestResponseNodeRetry (501,504 samples, 0.40%)</title><rect x="99.6021%" y="341" width="0.3979%" height="15" fill="rgb(240,125,3)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="351.50"></text></g><g><title>__MessagingTk_requestResponseWithRRArgsComm (501,504 samples, 0.40%)</title><rect x="99.6021%" y="325" width="0.3979%" height="15" fill="rgb(205,98,50)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="335.50"></text></g><g><title>_StandardSocket_sendto (501,504 samples, 0.40%)</title><rect x="99.6021%" y="309" width="0.3979%" height="15" fill="rgb(205,185,37)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="319.50"></text></g><g><title>sock_sendmsg (501,504 samples, 0.40%)</title><rect x="99.6021%" y="293" width="0.3979%" height="15" fill="rgb(238,207,15)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="303.50"></text></g><g><title>inet6_sendmsg (501,504 samples, 0.40%)</title><rect x="99.6021%" y="277" width="0.3979%" height="15" fill="rgb(213,199,42)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="287.50"></text></g><g><title>tcp_sendmsg (501,504 samples, 0.40%)</title><rect x="99.6021%" y="261" width="0.3979%" height="15" fill="rgb(235,201,11)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="271.50"></text></g><g><title>tcp_sendmsg_locked (501,504 samples, 0.40%)</title><rect x="99.6021%" y="245" width="0.3979%" height="15" fill="rgb(207,46,11)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="255.50"></text></g><g><title>tcp_push (501,504 samples, 0.40%)</title><rect x="99.6021%" y="229" width="0.3979%" height="15" fill="rgb(241,35,35)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="239.50"></text></g><g><title>__tcp_push_pending_frames (501,504 samples, 0.40%)</title><rect x="99.6021%" y="213" width="0.3979%" height="15" fill="rgb(243,32,47)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="223.50"></text></g><g><title>tcp_write_xmit (501,504 samples, 0.40%)</title><rect x="99.6021%" y="197" width="0.3979%" height="15" fill="rgb(247,202,23)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="207.50"></text></g><g><title>__tcp_transmit_skb (501,504 samples, 0.40%)</title><rect x="99.6021%" y="181" width="0.3979%" height="15" fill="rgb(219,102,11)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="191.50"></text></g><g><title>ip_queue_xmit (501,504 samples, 0.40%)</title><rect x="99.6021%" y="165" width="0.3979%" height="15" fill="rgb(243,110,44)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="175.50"></text></g><g><title>__ip_queue_xmit (501,504 samples, 0.40%)</title><rect x="99.6021%" y="149" width="0.3979%" height="15" fill="rgb(222,74,54)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="159.50"></text></g><g><title>ip_local_out (501,504 samples, 0.40%)</title><rect x="99.6021%" y="133" width="0.3979%" height="15" fill="rgb(216,99,12)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="143.50"></text></g><g><title>ip_output (501,504 samples, 0.40%)</title><rect x="99.6021%" y="117" width="0.3979%" height="15" fill="rgb(226,22,26)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="127.50"></text></g><g><title>ip_finish_output (501,504 samples, 0.40%)</title><rect x="99.6021%" y="101" width="0.3979%" height="15" fill="rgb(217,163,10)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="111.50"></text></g><g><title>__ip_finish_output (501,504 samples, 0.40%)</title><rect x="99.6021%" y="85" width="0.3979%" height="15" fill="rgb(213,25,53)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="95.50"></text></g><g><title>ip_finish_output2 (501,504 samples, 0.40%)</title><rect x="99.6021%" y="69" width="0.3979%" height="15" fill="rgb(252,105,26)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="79.50"></text></g><g><title>neigh_hh_output (501,504 samples, 0.40%)</title><rect x="99.6021%" y="53" width="0.3979%" height="15" fill="rgb(220,39,43)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="63.50"></text></g><g><title>__dev_queue_xmit (501,504 samples, 0.40%)</title><rect x="99.6021%" y="37" width="0.3979%" height="15" fill="rgb(229,68,48)" fg:x="125543810" fg:w="501504"/><text x="99.8521%" y="47.50"></text></g></svg></svg>

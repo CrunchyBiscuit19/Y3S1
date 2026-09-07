@@ -1,0 +1,227 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+*.so.*
+
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Build directories
+build/
+Build/
+build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
+
+# vcpkg
+vcpkg_installed/
+
+# debug information files
+*.dwo
+
+# test output & cache
+Testing/
+.cache/
+
+# LaTeX compilation artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
+*.synctex(busy)
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.idx
+*.ilg
+*.ind
+*.glo
+*.gls
+*.glg
+*.acn
+*.acr
+*.alg
+*.fmt
+*.dvi
+*.xdv
+*.pdf
+# Visual Studio / MSVC IDE and build artifacts
+.vs/
+x64/
+Debug/
+Release/
+*.suo
+*.vsidx
+*.sln
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.tlog
+*.idb
+*.ipch
+*.recipe
+*.lastbuildstate
+*.db
+*.nupkg
+*.nuspec
+desktop.ini
+
+# CS3241 assignments: keep only the .cpp source, ignore everything else
+CS3241/**/*.h
+CS3241/**/*.json
+CS3241/**/*.command
+CS3241/**/*.config
+CS3241/**/*.txt
+CS3241/**/*.ini
+CS3241/**/*.sln
+CS3241/**/*.vcxproj
+CS3241/**/*.vcxproj.filters
+CS3241/**/*.vcxproj.user
+CS3241/**/.vs/
+
+*.data*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / shell junk
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+*.stackdump
+*.lnk
+
+# Editor / IDE
+.idea/
+*.code-workspace
+*.sublime-workspace
+*~
+*.swo
+.vscode/*.log
+
+# Claude Code local overrides
+.claude/settings.local.json
+.claude/local/
+
+# Coverage / profiling / crash dumps
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+callgrind.out.*
+massif.out.*
+cachegrind.out.*
+perf.data
+perf.data.old
+*.perf-folded
+core
+vgcore.*
+*.dSYM/
+
+# More MSVC / Visual Studio state
+*.sdf
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.opendb
+*.aps
+*.ncb
+*.cachefile
+ipch/
+bin/
+obj/
+Win32/
+ARM64/
+
+# NuGet restore output (CS3241 labs vendor these)
+CS3241/**/packages/
+
+# More LaTeX / build artifacts
+*.figlist
+*.auxlock
+*.nlo
+*.nls
+*.pytxcode
+*-blx.bib
+*.sagetex.*
+_minted*/
+latex.out/
+*.synctex*(busy)
+
+# Secrets / personal credentials -- never commit these
+credentials.txt
+*credentials*.txt
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+id_ed25519

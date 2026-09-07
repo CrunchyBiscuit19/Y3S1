@@ -1,0 +1,7 @@
+run,task_clock_msec,cycles,instructions,branch_misses,cache_references,cache_misses
+1,158.97,<not counted>,594808411,<not counted>,505473939,<not counted>,2509036,<not counted>,61036,<not counted>,8314
+2,155.34,<not counted>,596332049,<not counted>,505629732,<not counted>,2542258,<not counted>,64939,<not counted>,8073
+3,155.97,<not counted>,596880006,<not counted>,505536431,<not counted>,2570171,<not counted>,64710,<not counted>,9146
+4,155.74,<not counted>,597460119,<not counted>,505654285,<not counted>,2588364,<not counted>,76007,<not counted>,10760
+5,154.88,<not counted>,595355464,<not counted>,505696776,<not counted>,2488692,<not counted>,69031,<not counted>,8689
+avg,156.18,0.00,596167209.80,0.00,505598232.60,0.00,2539704.20,0.00,67144.60,0.00,8996.40
