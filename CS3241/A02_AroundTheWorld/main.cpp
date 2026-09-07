@@ -76,7 +76,7 @@ class Planet {
 };
 
 GLfloat PI = 3.14;
-GLfloat backgroundColor[3] = {0.0f, 0.0f, 0.3f};
+GLfloat backgroundColor[3] = {0.1f, 0.3f, 0.3f};
 float alpha = 0.0, k = 1;
 float tx = 0.0, ty = 0.0;
 
