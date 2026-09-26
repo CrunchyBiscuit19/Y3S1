@@ -14,6 +14,10 @@
 #include <OpenGL/gl.h>
 #endif
 
+#include <array>
+#include <vector>
+#include <utility>
+
 using namespace std;
 
 // global variable
@@ -29,10 +33,33 @@ int moving, startx, starty;
 #define NO_OBJECT 4;
 int current_object = 0;
 
+std::vector<std::pair<std::array<float, 3>, std::vector<int>>> vertexAdjacency;  // positions, and associated face indices
+std::vector<std::pair<std::vector<int>, std::vector<int>>> faceAdjacency;        // face vertex indices, and adjacent face indices
+std::vector<std::array<float, 3>> faceNormals;
+std::vector<std::array<float, 3>> vertexNormals;
+
 using namespace std;
 
+array<float, 3> add(const array<float, 3>& a, const array<float, 3>& b) {
+    return {a[0] + b[0], a[1] + b[1], a[2] + b[2]};
+}
+
+array<float, 3> subtract(const array<float, 3>& a, const array<float, 3>& b) {
+    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
+}
+
+array<float, 3> cross(const array<float, 3>& a, const array<float, 3>& b) {
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+}
+
+array<float, 3> normalize(const array<float, 3>& a) {
+    float length = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    if (length == 0.0f) return a;
+    return {a[0] / length, a[1] / length, a[2] / length};
+}
+
 void setupLighting() {
-    glShadeModel(GL_SMOOTH);
+    m_Smooth ? glShadeModel(GL_SMOOTH) : glShadeModel(GL_FLAT);
     glEnable(GL_NORMALIZE);
 
     // Lights, material properties
@@ -59,15 +86,84 @@ void drawSphere(double r) {
     glScalef(r, r, r);
     int i, j;
     int n = 20;
-    for (i = 0; i < 2 * n; i++)
-        for (j = 0; j < n; j++) {
-            glBegin(GL_POLYGON);
-            glVertex3d(sin(i * M_PI / n) * sin(j * M_PI / n), cos(i * M_PI / n) * sin(j * M_PI / n), cos(j * M_PI / n));
-            glVertex3d(sin((i + 1) * M_PI / n) * sin(j * M_PI / n), cos((i + 1) * M_PI / n) * sin(j * M_PI / n), cos(j * M_PI / n));
-            glVertex3d(sin((i + 1) * M_PI / n) * sin((j + 1) * M_PI / n), cos((i + 1) * M_PI / n) * sin((j + 1) * M_PI / n), cos((j + 1) * M_PI / n));
-            glVertex3d(sin(i * M_PI / n) * sin((j + 1) * M_PI / n), cos(i * M_PI / n) * sin((j + 1) * M_PI / n), cos((j + 1) * M_PI / n));
-            glEnd();
+
+    vertexAdjacency.clear();
+    faceAdjacency.clear();
+
+    auto vertexIndex = [n](int i, int j) {
+        if (j == 0) return 0;
+        if (j == n) return 1 + (n - 1) * 2 * n;
+        return 1 + (j - 1) * 2 * n + i % (2 * n);
+    };
+
+    // Insert vertex positions
+    vertexAdjacency.emplace_back(array<float, 3>{0.0f, 0.0f, 1.0f}, vector<int>());
+    for (j = 1; j < n; j++) {
+        for (i = 0; i < 2 * n; i++) {
+            float x = sin(i * M_PI / n) * sin(j * M_PI / n);
+            float y = cos(i * M_PI / n) * sin(j * M_PI / n);
+            float z = cos(j * M_PI / n);
+            vertexAdjacency.emplace_back(array<float, 3>{x, y, z}, vector<int>());
         }
+    }
+    vertexAdjacency.emplace_back(array<float, 3>{0.0f, 0.0f, -1.0f}, vector<int>());
+
+    // Insert vertex associated face indices and face adjacency
+    for (i = 0; i < 2 * n; i++) {
+        for (j = 0; j < n; j++) {
+            int corners[4] = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
+            vector<int> face;
+            for (int k = 0; k < 4; k++) {
+                if (face.empty() || (corners[k] != face.back() && corners[k] != face.front())) {
+                    face.push_back(corners[k]);
+                }
+            }
+
+            int f = faceAdjacency.size();
+            for (int v : face) {
+                vertexAdjacency[v].second.push_back(f);
+            }
+
+            vector<int> neighbours;
+            neighbours.push_back(((i + 2 * n - 1) % (2 * n)) * n + j);
+            neighbours.push_back(((i + 1) % (2 * n)) * n + j);
+            if (j > 0) neighbours.push_back(i * n + j - 1);
+            if (j < n - 1) neighbours.push_back(i * n + j + 1);
+
+            faceAdjacency.emplace_back(face, neighbours);
+        }
+    }
+
+    // Calculate face normals
+    faceNormals.clear();
+    for (auto& face : faceAdjacency) {
+        array<float, 3>& a = vertexAdjacency[face.first[0]].first;
+        array<float, 3>& b = vertexAdjacency[face.first[1]].first;
+        array<float, 3>& c = vertexAdjacency[face.first[2]].first;
+        faceNormals.push_back(normalize(cross(subtract(b, a), subtract(c, a))));
+    }
+
+    // Calculate vertex normals from face normals average
+    vertexNormals.clear();
+    for (auto& vertex : vertexAdjacency) {
+        array<float, 3> sum = {0.0f, 0.0f, 0.0f};
+        for (int f : vertex.second) {
+            sum = add(sum, faceNormals[f]);
+        }
+        vertexNormals.push_back(normalize(sum));
+    }
+
+    GLfloat mediumBlue[] = {0.0f, 0.0f, 0.804f, 1.0f};
+
+    for (auto& face : faceAdjacency) {
+        glBegin(GL_POLYGON);
+        for (int v : face.first) {
+            glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mediumBlue);
+            glNormal3fv(vertexNormals[v].data());
+            glVertex3fv(vertexAdjacency[v].first.data());
+        }
+        glEnd();
+    }
 }
 
 void display(void) {

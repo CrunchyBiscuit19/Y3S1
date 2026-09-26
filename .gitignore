@@ -225,3 +225,6 @@ credentials.txt
 *.key
 id_rsa
 id_ed25519
+
+# CS3210 A1 personal notes (not for submission)
+CS3210/A01/A1_NOTES.md
