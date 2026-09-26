@@ -134,7 +134,7 @@ void drawSphere(double r) {
         }
     }
 
-    // Calculate face normals
+    // Calculate face normals. For any 3 vertices abc, normal is (b - a) x (c - a) 
     faceNormals.clear();
     for (auto& face : faceAdjacency) {
         array<float, 3>& a = vertexAdjacency[face.first[0]].first;
@@ -143,23 +143,41 @@ void drawSphere(double r) {
         faceNormals.push_back(normalize(cross(subtract(b, a), subtract(c, a))));
     }
 
-    // Calculate vertex normals from face normals average
+    // Calculate vertex normals from surrounding face normals' average (a + b + c + ...)/n
     vertexNormals.clear();
     for (auto& vertex : vertexAdjacency) {
         array<float, 3> sum = {0.0f, 0.0f, 0.0f};
-        for (int f : vertex.second) {
+        for (auto& f : vertex.second) {
             sum = add(sum, faceNormals[f]);
+        }
+        for (auto& s : sum) {
+            s /= vertex.second.size();
         }
         vertexNormals.push_back(normalize(sum));
     }
 
-    GLfloat mediumBlue[] = {0.0f, 0.0f, 0.804f, 1.0f};
+    GLfloat mediumBlue[] = {0.0f, 0.0f, 0.8f, 1.0f};
+    GLfloat highlightSpecular[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    GLfloat noSpecular[] = {0.0f, 0.0f, 0.0f, 1.0f};
 
-    for (auto& face : faceAdjacency) {
+    if (m_Highlight) {
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, highlightSpecular);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 64.0f);
+    } else {
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, noSpecular);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
+    }
+
+    for (size_t f = 0; f < faceAdjacency.size(); f++) {
         glBegin(GL_POLYGON);
-        for (int v : face.first) {
+        if (!m_Smooth) {
+            glNormal3fv(faceNormals[f].data());
+        }
+        for (int v : faceAdjacency[f].first) {
             glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mediumBlue);
-            glNormal3fv(vertexNormals[v].data());
+            if (m_Smooth) {
+                glNormal3fv(vertexNormals[v].data());
+            }
             glVertex3fv(vertexAdjacency[v].first.data());
         }
         glEnd();
@@ -175,6 +193,8 @@ void display(void) {
     glRotatef(angle, 0.0, 1.0, 0.0);
 
     glScalef(zoom, zoom, zoom);
+
+    glShadeModel(m_Smooth ? GL_SMOOTH : GL_FLAT);
 
     switch (current_object) {
         case 0:
