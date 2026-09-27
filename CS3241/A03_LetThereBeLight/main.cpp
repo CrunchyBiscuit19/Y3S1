@@ -29,6 +29,10 @@ GLfloat angle2 = 0; /* in degrees */
 GLfloat zoom = 1.0;
 int mouseButton = 0;
 int moving, startx, starty;
+GLfloat mediumBlue[] = {0.0f, 0.0f, 0.8f, 1.0f};
+GLfloat maroon[] = {0.5f, 0.0f, 0.0f, 1.0f};
+GLfloat silver[] = {0.75f, 0.75f, 0.75f, 1.0f};
+GLfloat gold[] = {1.0f, 0.84f, 0.0f, 1.0f};
 
 #define NO_OBJECT 4;
 int current_object = 0;
@@ -52,11 +56,21 @@ array<float, 3> cross(const array<float, 3>& a, const array<float, 3>& b) {
     return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
 }
 
+float dot(const array<float, 3>& a, const array<float, 3>& b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+array<float, 3> negate(const array<float, 3>& a) {
+    return {-a[0], -a[1], -a[2]};
+}
+
 array<float, 3> normalize(const array<float, 3>& a) {
     float length = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
     if (length == 0.0f) return a;
     return {a[0] / length, a[1] / length, a[2] / length};
 }
+
+void drawMesh(const GLfloat* colour);
 
 void setupLighting() {
     m_Smooth ? glShadeModel(GL_SMOOTH) : glShadeModel(GL_FLAT);
@@ -134,7 +148,200 @@ void drawSphere(double r) {
         }
     }
 
-    // Calculate face normals. For any 3 vertices abc, normal is (b - a) x (c - a) 
+    drawMesh(mediumBlue);
+}
+
+void drawMobius(double r) {
+    glScalef(r, r, r);
+    int i, j;
+    int n = 60;
+    int m = 8;
+    float halfWidth = 0.4f;
+
+    vertexAdjacency.clear();
+    faceAdjacency.clear();
+
+    auto vertexIndex = [n, m](int i, int j) {
+        if (i == n) return m - j;
+        return i * (m + 1) + j;
+    };
+    auto faceIndex = [n, m](int i, int j) {
+        if (i < 0) return (n - 1) * m + (m - 1 - j);
+        if (i == n) return m - 1 - j;
+        return i * m + j;
+    };
+
+    // Insert vertex positions, u goes around the loop and v across the strip with a half twist
+    for (i = 0; i < n; i++) {
+        for (j = 0; j <= m; j++) {
+            float u = 2 * M_PI * i / n;
+            float v = -halfWidth + 2 * halfWidth * j / m;
+            float x = (1 + v * cos(u / 2)) * cos(u);
+            float y = (1 + v * cos(u / 2)) * sin(u);
+            float z = v * sin(u / 2);
+            vertexAdjacency.emplace_back(array<float, 3>{x, y, z}, vector<int>());
+        }
+    }
+
+    // Insert vertex associated face indices and face adjacency, the seam joins row j to row m - j
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < m; j++) {
+            vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
+
+            int f = faceAdjacency.size();
+            for (int v : face) {
+                vertexAdjacency[v].second.push_back(f);
+            }
+
+            vector<int> neighbours;
+            neighbours.push_back(faceIndex(i - 1, j));
+            neighbours.push_back(faceIndex(i + 1, j));
+            if (j > 0) neighbours.push_back(faceIndex(i, j - 1));
+            if (j < m - 1) neighbours.push_back(faceIndex(i, j + 1));
+
+            faceAdjacency.emplace_back(face, neighbours);
+        }
+    }
+
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+    drawMesh(gold);
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
+}
+
+void drawChainLink(double r) {
+    glScalef(r, r, r);
+    int i, j, k;
+    int straightSteps = 8;
+    int curveSteps = 16;
+    int m = 16;
+    float halfStraight = 0.48f;
+    float bendRadius = 0.52f;
+    float tubeRadius = 0.2f;
+
+    vertexAdjacency.clear();
+    faceAdjacency.clear();
+
+    // Centre line of the tube, a stadium of two straights and two semicircles, with its outward direction
+    vector<pair<array<float, 3>, array<float, 3>>> path;
+    for (k = 0; k < straightSteps; k++) {
+        float y = -halfStraight + 2 * halfStraight * k / straightSteps;
+        path.push_back({{bendRadius, y, 0.0f}, {1.0f, 0.0f, 0.0f}});
+    }
+    for (k = 0; k < curveSteps; k++) {
+        float theta = M_PI * k / curveSteps;
+        path.push_back({{bendRadius * cos(theta), halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
+    }
+    for (k = 0; k < straightSteps; k++) {
+        float y = halfStraight - 2 * halfStraight * k / straightSteps;
+        path.push_back({{-bendRadius, y, 0.0f}, {-1.0f, 0.0f, 0.0f}});
+    }
+    for (k = 0; k < curveSteps; k++) {
+        float theta = M_PI + M_PI * k / curveSteps;
+        path.push_back({{bendRadius * cos(theta), -halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
+    }
+    int n = path.size();
+
+    auto vertexIndex = [n, m](int i, int j) { return (i % n) * m + j % m; };
+    auto faceIndex = [n, m](int i, int j) { return ((i + n) % n) * m + (j + m) % m; };
+
+    // Insert vertex positions, a circle of radius tubeRadius around each centre line point
+    for (i = 0; i < n; i++) {
+        array<float, 3>& centre = path[i].first;
+        array<float, 3>& outward = path[i].second;
+        for (j = 0; j < m; j++) {
+            float phi = 2 * M_PI * j / m;
+            float x = centre[0] + tubeRadius * cos(phi) * outward[0];
+            float y = centre[1] + tubeRadius * cos(phi) * outward[1];
+            float z = tubeRadius * sin(phi);
+            vertexAdjacency.emplace_back(array<float, 3>{x, y, z}, vector<int>());
+        }
+    }
+
+    // Insert vertex associated face indices and face adjacency, wrapping both along and around the tube
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < m; j++) {
+            vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
+
+            int f = faceAdjacency.size();
+            for (int v : face) {
+                vertexAdjacency[v].second.push_back(f);
+            }
+
+            vector<int> neighbours = {faceIndex(i - 1, j), faceIndex(i + 1, j), faceIndex(i, j - 1), faceIndex(i, j + 1)};
+
+            faceAdjacency.emplace_back(face, neighbours);
+        }
+    }
+
+    drawMesh(silver);
+}
+
+void drawCylinder(double r) {
+    glScalef(r, r, r);
+    int i;
+    int n = 32;
+    float halfHeight = 1.25f;
+
+    vertexAdjacency.clear();
+    faceAdjacency.clear();
+
+    int sideBottom = 0;
+    int sideTop = n;
+    int capBottom = 2 * n;
+    int capBottomCentre = 3 * n;
+    int capTop = 3 * n + 1;
+    int capTopCentre = 4 * n + 1;
+
+    // Insert vertex positions
+    for (float y : {-halfHeight, halfHeight}) {
+        for (i = 0; i < n; i++) {
+            float theta = 2 * M_PI * i / n;
+            vertexAdjacency.emplace_back(array<float, 3>{cos(theta), y, -sin(theta)}, vector<int>());
+        }
+    }
+    for (float y : {-halfHeight, halfHeight}) {
+        for (i = 0; i < n; i++) {
+            float theta = 2 * M_PI * i / n;
+            vertexAdjacency.emplace_back(array<float, 3>{cos(theta), y, -sin(theta)}, vector<int>());
+        }
+        vertexAdjacency.emplace_back(array<float, 3>{0.0f, y, 0.0f}, vector<int>());
+    }
+
+    // Insert vertex associated face indices and face adjacency, faces are side quads, then top and bottom cap triangles
+    vector<vector<int>> faces;
+    for (i = 0; i < n; i++) {
+        faces.push_back({sideBottom + i, sideBottom + (i + 1) % n, sideTop + (i + 1) % n, sideTop + i});
+    }
+    for (i = 0; i < n; i++) {
+        faces.push_back({capTopCentre, capTop + i, capTop + (i + 1) % n});
+    }
+    for (i = 0; i < n; i++) {
+        faces.push_back({capBottomCentre, capBottom + (i + 1) % n, capBottom + i});
+    }
+
+    for (int f = 0; f < 3 * n; f++) {
+        for (int v : faces[f]) {
+            vertexAdjacency[v].second.push_back(f);
+        }
+
+        int ring = f / n;
+        i = f % n;
+        vector<int> neighbours = {ring * n + (i + n - 1) % n, ring * n + (i + 1) % n};
+        if (ring == 0) {
+            neighbours.push_back(n + i);
+            neighbours.push_back(2 * n + i);
+        } else {
+            neighbours.push_back(i);
+        }
+
+        faceAdjacency.emplace_back(faces[f], neighbours);
+    }
+
+    drawMesh(maroon);
+}
+
+void drawMesh(const GLfloat* colour) {
+    // Calculate face normals. For any 3 vertices abc, normal is (b - a) x (c - a)
     faceNormals.clear();
     for (auto& face : faceAdjacency) {
         array<float, 3>& a = vertexAdjacency[face.first[0]].first;
@@ -144,11 +351,14 @@ void drawSphere(double r) {
     }
 
     // Calculate vertex normals from surrounding face normals' average (a + b + c + ...)/n
+    // Face normals are flipped to one side first, since one-sided surfaces like a Mobius strip have no consistent outward
     vertexNormals.clear();
     for (auto& vertex : vertexAdjacency) {
         array<float, 3> sum = {0.0f, 0.0f, 0.0f};
         for (auto& f : vertex.second) {
-            sum = add(sum, faceNormals[f]);
+            array<float, 3> normal = faceNormals[f];
+            if (dot(normal, faceNormals[vertex.second[0]]) < 0) normal = negate(normal);
+            sum = add(sum, normal);
         }
         for (auto& s : sum) {
             s /= vertex.second.size();
@@ -156,7 +366,6 @@ void drawSphere(double r) {
         vertexNormals.push_back(normalize(sum));
     }
 
-    GLfloat mediumBlue[] = {0.0f, 0.0f, 0.8f, 1.0f};
     GLfloat highlightSpecular[] = {1.0f, 1.0f, 1.0f, 1.0f};
     GLfloat noSpecular[] = {0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -174,9 +383,11 @@ void drawSphere(double r) {
             glNormal3fv(faceNormals[f].data());
         }
         for (int v : faceAdjacency[f].first) {
-            glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mediumBlue);
+            glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, colour);
             if (m_Smooth) {
-                glNormal3fv(vertexNormals[v].data());
+                array<float, 3> normal = vertexNormals[v];
+                if (dot(normal, faceNormals[f]) < 0) normal = negate(normal);
+                glNormal3fv(normal.data());
             }
             glVertex3fv(vertexAdjacency[v].first.data());
         }
@@ -201,7 +412,19 @@ void display(void) {
             drawSphere(1);
             break;
         case 1:
-            // draw your second primitive object here
+            glPushMatrix();
+            glTranslatef(-1.35f, 0.0f, 0.0f);
+            drawMobius(0.5);
+            glPopMatrix();
+
+            glPushMatrix();
+            drawCylinder(0.4);
+            glPopMatrix();
+
+            glPushMatrix();
+            glTranslatef(1.4f, 0.0f, 0.0f);
+            drawChainLink(0.6);
+            glPopMatrix();
             break;
         case 2:
             // draw your first composite object here
