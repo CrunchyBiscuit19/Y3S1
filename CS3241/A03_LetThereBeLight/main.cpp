@@ -636,11 +636,11 @@ void keyboard(unsigned char key, int x, int y) {
             updateProjection();
             break;
         case 'f':
-            farPlane = max(nearPlane + 0.25, farPlane - 1.0);
+            farPlane = max(nearPlane + 0.25, farPlane - 5.0);
             updateProjection();
             break;
         case 'F':
-            farPlane += 1.0;
+            farPlane += 5.0;
             updateProjection();
             break;
         case 'o':
