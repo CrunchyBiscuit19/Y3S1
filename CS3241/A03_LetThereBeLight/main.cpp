@@ -34,6 +34,13 @@ GLfloat maroon[] = {0.5f, 0.0f, 0.0f, 1.0f};
 GLfloat silver[] = {0.75f, 0.75f, 0.75f, 1.0f};
 GLfloat gold[] = {1.0f, 0.84f, 0.0f, 1.0f};
 
+GLdouble cameraEye[3];
+GLdouble cameraCentre[3];
+GLdouble cameraUp[3];
+GLdouble nearPlane;
+GLdouble farPlane;
+GLdouble fovy;
+
 #define NO_OBJECT 4;
 int current_object = 0;
 
@@ -96,7 +103,7 @@ void setupLighting() {
     glEnable(GL_LIGHTING);
 }
 
-void drawSphere(double r) {
+void drawSphere(double r, const GLfloat* colour = mediumBlue) {
     glScalef(r, r, r);
     int i, j;
     int n = 20;
@@ -148,10 +155,10 @@ void drawSphere(double r) {
         }
     }
 
-    drawMesh(mediumBlue);
+    drawMesh(colour);
 }
 
-void drawMobius(double r) {
+void drawMobius(double r, const GLfloat* colour = gold) {
     glScalef(r, r, r);
     int i, j;
     int n = 60;
@@ -204,11 +211,11 @@ void drawMobius(double r) {
     }
 
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-    drawMesh(gold);
+    drawMesh(colour);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 }
 
-void drawChainLink(double r) {
+void drawChainLink(double r, const GLfloat* colour = silver) {
     glScalef(r, r, r);
     int i, j, k;
     int straightSteps = 8;
@@ -273,10 +280,10 @@ void drawChainLink(double r) {
         }
     }
 
-    drawMesh(silver);
+    drawMesh(colour);
 }
 
-void drawCylinder(double r) {
+void drawCylinder(double r, const GLfloat* colour = maroon) {
     glScalef(r, r, r);
     int i;
     int n = 32;
@@ -337,7 +344,110 @@ void drawCylinder(double r) {
         faceAdjacency.emplace_back(faces[f], neighbours);
     }
 
-    drawMesh(maroon);
+    drawMesh(colour);
+}
+
+void drawNunchuck() {
+    int k;
+    float chainHeight = 0.8f;
+    float linkScale = 0.25f;
+    float linkPitch = 1.6f * linkScale;
+    int linkCount = 7;
+    float chainHalfLength = (linkCount - 1) / 2.0f * linkPitch;
+    float handleX = chainHalfLength + 0.8f * linkScale;
+
+    for (k = 0; k < linkCount; k++) {
+        glPushMatrix();
+        glTranslatef(-chainHalfLength + k * linkPitch, chainHeight, 0.0f);
+        if (k % 2 == 1) glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
+        glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
+        drawChainLink(linkScale);
+        glPopMatrix();
+    }
+
+    for (float x : {-handleX, handleX}) {
+        glPushMatrix();
+        glTranslatef(x, -0.5f, 0.0f);
+        glScalef(0.15f, 1.f, 0.15f);
+        drawCylinder(1);
+        glPopMatrix();
+    }
+}
+
+void drawAnchor() {
+    int k;
+    float shankHalfLength = 1.2f;
+    float shankRadius = 0.1f;
+    float armRadius = 0.1f;
+    float arcRadius = 0.9f;
+    float arcCentreY = -shankHalfLength + arcRadius;
+    float arcStart = -160.0f;
+    float arcEnd = -20.0f;
+    int armSegments = 10;
+    float stockY = 1.f;
+    float stockHalfLength = 0.8f;
+    float linkScale = 0.3f;
+    float linkPitch = 1.5f * linkScale;
+    float ringY = shankHalfLength + 0.8f * linkScale;
+
+    glPushMatrix();
+    glTranslatef(0.0f, -0.6f, 0.0f);
+    glScalef(0.8f, 0.8f, 0.8f);
+
+    glPushMatrix();
+    glScalef(shankRadius, shankHalfLength / 1.25f, shankRadius);
+    drawCylinder(1);
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(0.0f, stockY, 0.0f);
+    glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
+    glScalef(0.1f, stockHalfLength / 1.25f, 0.1f);
+    drawCylinder(1);
+    glPopMatrix();
+
+    for (float z : {-stockHalfLength, stockHalfLength}) {
+        glPushMatrix();
+        glTranslatef(0.0f, stockY, z);
+        drawSphere(0.1, gold);
+        glPopMatrix();
+    }
+
+    float step = (arcEnd - arcStart) / armSegments;
+    float segmentHalfLength = arcRadius * sin(step / 2 * M_PI / 180);
+    for (k = 0; k < armSegments; k++) {
+        float theta = arcStart + (k + 0.5f) * step;
+        glPushMatrix();
+        glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
+        glRotatef(theta, 0.0f, 0.0f, 1.0f);
+        glScalef(armRadius, 1.1f * segmentHalfLength / 1.25f, armRadius);
+        drawCylinder(1);
+        glPopMatrix();
+    }
+
+    glPushMatrix();
+    glTranslatef(0.0f, -shankHalfLength, 0.0f);
+    drawSphere(0.14, maroon);
+    glPopMatrix();
+
+    for (float theta : {arcStart, arcEnd}) {
+        glPushMatrix();
+        glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
+        glRotatef(theta, 0.0f, 0.0f, 1.0f);
+        glScalef(0.15f, 0.3f, 0.1f);
+        drawSphere(1, gold);
+        glPopMatrix();
+    }
+
+    for (k = 0; k < 3; k++) {
+        glPushMatrix();
+        glTranslatef(0.0f, ringY + k * linkPitch, 0.0f);
+        if (k % 2 == 1) glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+        drawChainLink(linkScale, k == 0 ? gold : silver);
+        glPopMatrix();
+    }
+
+    glPopMatrix();
 }
 
 void drawMesh(const GLfloat* colour) {
@@ -395,10 +505,58 @@ void drawMesh(const GLfloat* colour) {
     }
 }
 
+void updateProjection() {
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(fovy, 1.0, nearPlane, farPlane);
+    glMatrixMode(GL_MODELVIEW);
+}
+
+void setCamera(GLdouble eyeX, GLdouble eyeY, GLdouble eyeZ) {
+    cameraEye[0] = eyeX;
+    cameraEye[1] = eyeY;
+    cameraEye[2] = eyeZ;
+    cameraCentre[0] = cameraCentre[1] = cameraCentre[2] = 0.0;
+    cameraUp[0] = 0.0;
+    cameraUp[1] = 1.0;
+    cameraUp[2] = 0.0;
+    angle = 0;
+    angle2 = 0;
+    zoom = 1.0;
+}
+
+void resetCamera() {
+    setCamera(0.0, 0.0, 6.0);
+    nearPlane = 1.0;
+    farPlane = 80.0;
+    fovy = 40.0;
+    updateProjection();
+}
+
+void bestCamera() {
+    switch (current_object) {
+        case 0:
+            setCamera(-2.5, 2.5, 5.0);
+            break;
+        case 1:
+            setCamera(0.0, 2.5, 5.5);
+            break;
+        case 2:
+            setCamera(2.5, 2.0, 5.2);
+            break;
+        case 3:
+            setCamera(4.5, 1.0, 4.2);
+            break;
+        default:
+            break;
+    }
+}
+
 void display(void) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glPushMatrix();
-    glTranslatef(0, 0, -6);
+    glLoadIdentity();
+    gluLookAt(cameraEye[0], cameraEye[1], cameraEye[2], cameraCentre[0], cameraCentre[1], cameraCentre[2], cameraUp[0], cameraUp[1], cameraUp[2]);
 
     glRotatef(angle2, 1.0, 0.0, 0.0);
     glRotatef(angle, 0.0, 1.0, 0.0);
@@ -427,10 +585,10 @@ void display(void) {
             glPopMatrix();
             break;
         case 2:
-            // draw your first composite object here
+            drawNunchuck();
             break;
         case 3:
-            // draw your second composite object here
+            drawAnchor();
             break;
         default:
             break;
@@ -467,6 +625,37 @@ void keyboard(unsigned char key, int x, int y) {
         case '3':
         case '4':
             current_object = key - '1';
+            break;
+
+        case 'n':
+            nearPlane = max(0.1, nearPlane - 0.25);
+            updateProjection();
+            break;
+        case 'N':
+            nearPlane = min(farPlane - 0.25, nearPlane + 0.25);
+            updateProjection();
+            break;
+        case 'f':
+            farPlane = max(nearPlane + 0.25, farPlane - 1.0);
+            updateProjection();
+            break;
+        case 'F':
+            farPlane += 1.0;
+            updateProjection();
+            break;
+        case 'o':
+            fovy = max(5.0, fovy - 5.0);
+            updateProjection();
+            break;
+        case 'O':
+            fovy = min(175.0, fovy + 5.0);
+            updateProjection();
+            break;
+        case 'r':
+            resetCamera();
+            break;
+        case 'R':
+            bestCamera();
             break;
 
         case 'Q':
@@ -517,6 +706,11 @@ int main(int argc, char** argv) {
     cout << "W: Draw Wireframe" << endl;
     cout << "P: Draw Polygon" << endl;
     cout << "V: Draw Vertices" << endl;
+    cout << "n/N: Move near plane closer/further" << endl;
+    cout << "f/F: Move far plane closer/further" << endl;
+    cout << "o/O: Decrease/increase field of view" << endl;
+    cout << "r: Reset camera" << endl;
+    cout << "R: Best camera view for the current object" << endl;
     cout << "Q: Quit" << endl << endl;
 
     cout << "Left mouse click and drag: rotate the object" << endl;
@@ -537,14 +731,7 @@ int main(int argc, char** argv) {
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
 
-    glMatrixMode(GL_PROJECTION);
-    gluPerspective(
-        /* field of view in degree */ 40.0,
-        /* aspect ratio */ 1.0,
-        /* Z near */ 1.0,
-        /* Z far */ 80.0
-    );
-    glMatrixMode(GL_MODELVIEW);
+    resetCamera();
     glutMainLoop();
 
     return 0;
