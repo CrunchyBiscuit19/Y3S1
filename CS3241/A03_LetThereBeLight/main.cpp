@@ -1,6 +1,13 @@
 
 
-// CS3241 Assignment 2: Let there be light
+// CS3241 Assignment 3: Let there be light
+//
+// Objects
+//   1: Sphere
+//   2: Primitives - Mobius strip (gold), cylinder (maroon), chain link (silver)
+//   3: Balance of Two - a nunchaku of two cylinder handles joined by 7 interlocking chain links
+//   4: Anchored in Gold - an anchor built from cylinders, spheres and chain links
+//   Step 1 normals are in computeNormals(), shared by every object.
 #include <cmath>
 #include <iostream>
 
@@ -43,13 +50,14 @@ GLdouble fovy;
 
 #define NO_OBJECT 4;
 int current_object = 0;
+const char* objectTitles[] = {"Sphere", "Primitives", "Balance of Two", "Anchored in Gold"};
 
-std::vector<std::pair<std::array<float, 3>, std::vector<int>>> vertexAdjacency;  // positions, and associated face indices
-std::vector<std::pair<std::vector<int>, std::vector<int>>> faceAdjacency;        // face vertex indices, and adjacent face indices
-std::vector<std::array<float, 3>> faceNormals;
-std::vector<std::array<float, 3>> vertexNormals;
-
-using namespace std;
+struct Mesh {
+    std::vector<std::pair<std::array<float, 3>, std::vector<int>>> vertexAdjacency;  // positions, and associated face indices
+    std::vector<std::pair<std::vector<int>, std::vector<int>>> faceAdjacency;        // face vertex indices, and adjacent face indices
+    std::vector<std::array<float, 3>> faceNormals;
+    std::vector<std::array<float, 3>> vertexNormals;
+};
 
 array<float, 3> add(const array<float, 3>& a, const array<float, 3>& b) {
     return {a[0] + b[0], a[1] + b[1], a[2] + b[2]};
@@ -77,10 +85,10 @@ array<float, 3> normalize(const array<float, 3>& a) {
     return {a[0] / length, a[1] / length, a[2] / length};
 }
 
-void drawMesh(const GLfloat* colour);
+void computeNormals(Mesh& mesh);
+void drawMesh(const Mesh& mesh, const GLfloat* colour);
 
 void setupLighting() {
-    m_Smooth ? glShadeModel(GL_SMOOTH) : glShadeModel(GL_FLAT);
     glEnable(GL_NORMALIZE);
 
     // Lights, material properties
@@ -103,13 +111,12 @@ void setupLighting() {
     glEnable(GL_LIGHTING);
 }
 
-void drawSphere(double r, const GLfloat* colour = mediumBlue) {
-    glScalef(r, r, r);
+Mesh buildSphere() {
+    Mesh mesh;
+    auto& vertexAdjacency = mesh.vertexAdjacency;
+    auto& faceAdjacency = mesh.faceAdjacency;
     int i, j;
     int n = 20;
-
-    vertexAdjacency.clear();
-    faceAdjacency.clear();
 
     auto vertexIndex = [n](int i, int j) {
         if (j == 0) return 0;
@@ -155,18 +162,25 @@ void drawSphere(double r, const GLfloat* colour = mediumBlue) {
         }
     }
 
-    drawMesh(colour);
+    computeNormals(mesh);
+    return mesh;
 }
 
-void drawMobius(double r, const GLfloat* colour = gold) {
+void drawSphere(double r, const GLfloat* colour = mediumBlue) {
+    // Normals for smooth shading are computed in computeNormals(), called at the end of buildSphere()
+    static Mesh mesh = buildSphere();
     glScalef(r, r, r);
+    drawMesh(mesh, colour);
+}
+
+Mesh buildMobius() {
+    Mesh mesh;
+    auto& vertexAdjacency = mesh.vertexAdjacency;
+    auto& faceAdjacency = mesh.faceAdjacency;
     int i, j;
     int n = 60;
     int m = 8;
     float halfWidth = 0.4f;
-
-    vertexAdjacency.clear();
-    faceAdjacency.clear();
 
     auto vertexIndex = [n, m](int i, int j) {
         if (i == n) return m - j;
@@ -210,13 +224,22 @@ void drawMobius(double r, const GLfloat* colour = gold) {
         }
     }
 
+    computeNormals(mesh);
+    return mesh;
+}
+
+void drawMobius(double r, const GLfloat* colour = gold) {
+    static Mesh mesh = buildMobius();
+    glScalef(r, r, r);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-    drawMesh(colour);
+    drawMesh(mesh, colour);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 }
 
-void drawChainLink(double r, const GLfloat* colour = silver) {
-    glScalef(r, r, r);
+Mesh buildChainLink() {
+    Mesh mesh;
+    auto& vertexAdjacency = mesh.vertexAdjacency;
+    auto& faceAdjacency = mesh.faceAdjacency;
     int i, j, k;
     int straightSteps = 8;
     int curveSteps = 16;
@@ -224,9 +247,6 @@ void drawChainLink(double r, const GLfloat* colour = silver) {
     float halfStraight = 0.48f;
     float bendRadius = 0.52f;
     float tubeRadius = 0.2f;
-
-    vertexAdjacency.clear();
-    faceAdjacency.clear();
 
     // Centre line of the tube, a stadium of two straights and two semicircles, with its outward direction
     vector<pair<array<float, 3>, array<float, 3>>> path;
@@ -280,17 +300,23 @@ void drawChainLink(double r, const GLfloat* colour = silver) {
         }
     }
 
-    drawMesh(colour);
+    computeNormals(mesh);
+    return mesh;
 }
 
-void drawCylinder(double r, const GLfloat* colour = maroon) {
+void drawChainLink(double r, const GLfloat* colour = silver) {
+    static Mesh mesh = buildChainLink();
     glScalef(r, r, r);
+    drawMesh(mesh, colour);
+}
+
+Mesh buildCylinder() {
+    Mesh mesh;
+    auto& vertexAdjacency = mesh.vertexAdjacency;
+    auto& faceAdjacency = mesh.faceAdjacency;
     int i;
     int n = 32;
     float halfHeight = 1.25f;
-
-    vertexAdjacency.clear();
-    faceAdjacency.clear();
 
     int sideBottom = 0;
     int sideTop = n;
@@ -344,7 +370,14 @@ void drawCylinder(double r, const GLfloat* colour = maroon) {
         faceAdjacency.emplace_back(faces[f], neighbours);
     }
 
-    drawMesh(colour);
+    computeNormals(mesh);
+    return mesh;
+}
+
+void drawCylinder(double r, const GLfloat* colour = maroon) {
+    static Mesh mesh = buildCylinder();
+    glScalef(r, r, r);
+    drawMesh(mesh, colour);
 }
 
 void drawNunchuck() {
@@ -450,32 +483,32 @@ void drawAnchor() {
     glPopMatrix();
 }
 
-void drawMesh(const GLfloat* colour) {
+void computeNormals(Mesh& mesh) {
     // Calculate face normals. For any 3 vertices abc, normal is (b - a) x (c - a)
-    faceNormals.clear();
-    for (auto& face : faceAdjacency) {
-        array<float, 3>& a = vertexAdjacency[face.first[0]].first;
-        array<float, 3>& b = vertexAdjacency[face.first[1]].first;
-        array<float, 3>& c = vertexAdjacency[face.first[2]].first;
-        faceNormals.push_back(normalize(cross(subtract(b, a), subtract(c, a))));
+    for (auto& face : mesh.faceAdjacency) {
+        array<float, 3>& a = mesh.vertexAdjacency[face.first[0]].first;
+        array<float, 3>& b = mesh.vertexAdjacency[face.first[1]].first;
+        array<float, 3>& c = mesh.vertexAdjacency[face.first[2]].first;
+        mesh.faceNormals.push_back(normalize(cross(subtract(b, a), subtract(c, a))));
     }
 
     // Calculate vertex normals from surrounding face normals' average (a + b + c + ...)/n
     // Face normals are flipped to one side first, since one-sided surfaces like a Mobius strip have no consistent outward
-    vertexNormals.clear();
-    for (auto& vertex : vertexAdjacency) {
+    for (auto& vertex : mesh.vertexAdjacency) {
         array<float, 3> sum = {0.0f, 0.0f, 0.0f};
         for (auto& f : vertex.second) {
-            array<float, 3> normal = faceNormals[f];
-            if (dot(normal, faceNormals[vertex.second[0]]) < 0) normal = negate(normal);
+            array<float, 3> normal = mesh.faceNormals[f];
+            if (dot(normal, mesh.faceNormals[vertex.second[0]]) < 0) normal = negate(normal);
             sum = add(sum, normal);
         }
         for (auto& s : sum) {
             s /= vertex.second.size();
         }
-        vertexNormals.push_back(normalize(sum));
+        mesh.vertexNormals.push_back(normalize(sum));
     }
+}
 
+void drawMesh(const Mesh& mesh, const GLfloat* colour) {
     GLfloat highlightSpecular[] = {1.0f, 1.0f, 1.0f, 1.0f};
     GLfloat noSpecular[] = {0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -487,19 +520,20 @@ void drawMesh(const GLfloat* colour) {
         glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
     }
 
-    for (size_t f = 0; f < faceAdjacency.size(); f++) {
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, colour);
+
+    for (size_t f = 0; f < mesh.faceAdjacency.size(); f++) {
         glBegin(GL_POLYGON);
         if (!m_Smooth) {
-            glNormal3fv(faceNormals[f].data());
+            glNormal3fv(mesh.faceNormals[f].data());
         }
-        for (int v : faceAdjacency[f].first) {
-            glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, colour);
+        for (int v : mesh.faceAdjacency[f].first) {
             if (m_Smooth) {
-                array<float, 3> normal = vertexNormals[v];
-                if (dot(normal, faceNormals[f]) < 0) normal = negate(normal);
+                array<float, 3> normal = mesh.vertexNormals[v];
+                if (dot(normal, mesh.faceNormals[f]) < 0) normal = negate(normal);
                 glNormal3fv(normal.data());
             }
-            glVertex3fv(vertexAdjacency[v].first.data());
+            glVertex3fv(mesh.vertexAdjacency[v].first.data());
         }
         glEnd();
     }
@@ -625,6 +659,7 @@ void keyboard(unsigned char key, int x, int y) {
         case '3':
         case '4':
             current_object = key - '1';
+            glutSetWindowTitle(objectTitles[current_object]);
             break;
 
         case 'n':
@@ -720,7 +755,7 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(600, 600);
     glutInitWindowPosition(50, 50);
-    glutCreateWindow("CS3241 Assignment 3");
+    glutCreateWindow(objectTitles[current_object]);
     glClearColor(1.0, 1.0, 1.0, 1.0);
     glutDisplayFunc(display);
     glutMouseFunc(mouse);
