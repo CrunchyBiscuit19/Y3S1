@@ -2,12 +2,11 @@
 
 // CS3241 Assignment 3: Let there be light
 //
-// Objects
-//   1: Sphere
-//   2: Primitives - Mobius strip (gold), cylinder (maroon), chain link (silver)
-//   3: Balance of Two - a nunchaku of two cylinder handles joined by 7 interlocking chain links
-//   4: Anchored in Gold - an anchor built from cylinders, spheres and chain links
-//   Step 1 normals are in computeNormals(), shared by every object.
+// 1 Sphere
+// 2 Primitives: Mobius strip (gold), cylinder (maroon), chain link (silver)
+// 3 Balance of Two: Nunchuck of two cylinder handles joined by 7 interlocking chain links
+// 4 Anchored in Gold: Anchor built from cylinders, spheres and chain links
+// Step 1 normals are in computeNormals(), shared by every object.
 #include <cmath>
 #include <iostream>
 
@@ -118,6 +117,7 @@ Mesh buildSphere() {
     int i, j;
     int n = 20;
 
+    // Grid (i, j) to vertex index, each pole is a single vertex
     auto vertexIndex = [n](int i, int j) {
         if (j == 0) return 0;
         if (j == n) return 1 + (n - 1) * 2 * n;
@@ -140,6 +140,7 @@ Mesh buildSphere() {
     for (i = 0; i < 2 * n; i++) {
         for (j = 0; j < n; j++) {
             int corners[4] = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
+            // Discard repeated corners
             vector<int> face;
             for (int k = 0; k < 4; k++) {
                 if (face.empty() || (corners[k] != face.back() && corners[k] != face.front())) {
@@ -147,11 +148,13 @@ Mesh buildSphere() {
                 }
             }
 
+            // Record this face on each of its vertices, for averaging vertex normals
             int f = faceAdjacency.size();
             for (int v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
+            // Faces sharing an edge, wrapping around in i
             vector<int> neighbours;
             neighbours.push_back(((i + 2 * n - 1) % (2 * n)) * n + j);
             neighbours.push_back(((i + 1) % (2 * n)) * n + j);
@@ -182,6 +185,7 @@ Mesh buildMobius() {
     int m = 8;
     float halfWidth = 0.4f;
 
+    // Grid (i, j) to vertex and face index, i = n wraps to i = 0 with j flipped by the half twist
     auto vertexIndex = [n, m](int i, int j) {
         if (i == n) return m - j;
         return i * (m + 1) + j;
@@ -209,11 +213,13 @@ Mesh buildMobius() {
         for (j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
 
+            // Record this face on each of its vertices, for averaging vertex normals
             int f = faceAdjacency.size();
             for (int v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
+            // Faces sharing an edge, none past the strip's two edges
             vector<int> neighbours;
             neighbours.push_back(faceIndex(i - 1, j));
             neighbours.push_back(faceIndex(i + 1, j));
@@ -268,6 +274,7 @@ Mesh buildChainLink() {
     }
     int n = path.size();
 
+    // Grid (i, j) to vertex and face index, wrapping both along and around the tube
     auto vertexIndex = [n, m](int i, int j) { return (i % n) * m + j % m; };
     auto faceIndex = [n, m](int i, int j) { return ((i + n) % n) * m + (j + m) % m; };
 
@@ -289,11 +296,13 @@ Mesh buildChainLink() {
         for (j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
 
+            // Record this face on each of its vertices, for averaging vertex normals
             int f = faceAdjacency.size();
             for (int v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
+            // Faces sharing an edge, always four as the tube is closed
             vector<int> neighbours = {faceIndex(i - 1, j), faceIndex(i + 1, j), faceIndex(i, j - 1), faceIndex(i, j + 1)};
 
             faceAdjacency.emplace_back(face, neighbours);
@@ -353,10 +362,12 @@ Mesh buildCylinder() {
     }
 
     for (int f = 0; f < 3 * n; f++) {
+        // Record this face on each of its vertices, for averaging vertex normals
         for (int v : faces[f]) {
             vertexAdjacency[v].second.push_back(f);
         }
 
+        // Faces sharing an edge, the two in the same ring plus the side face or caps across the rim
         int ring = f / n;
         i = f % n;
         vector<int> neighbours = {ring * n + (i + n - 1) % n, ring * n + (i + 1) % n};
