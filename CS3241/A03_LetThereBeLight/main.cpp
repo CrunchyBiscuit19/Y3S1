@@ -3,8 +3,8 @@
 // CS3241 Assignment 3: Let there be light
 //
 // 1 Sphere
-// 2 Primitives: Mobius strip (gold), cylinder (maroon), chain link (silver)
-// 3 Balance of Two: Nunchuck of two cylinder handles joined by 7 interlocking chain links
+// 2 Primitives: Blade (dark gray), cylinder (maroon), chain link (silver)
+// 3 Balance of Two: Nunchuck of two cylinder handles (with blades on the end), joined by 7 interlocking chain links
 // 4 Anchored in Gold: Anchor built from cylinders, spheres and chain links
 // Step 1 normals are in computeNormals(), shared by every object.
 #include <cmath>
@@ -38,7 +38,8 @@ int moving, startx, starty;
 GLfloat mediumBlue[] = {0.0f, 0.0f, 0.8f, 1.0f};
 GLfloat maroon[] = {0.5f, 0.0f, 0.0f, 1.0f};
 GLfloat silver[] = {0.75f, 0.75f, 0.75f, 1.0f};
-GLfloat gold[] = {1.0f, 0.84f, 0.0f, 1.0f};
+GLfloat gold[] = {1.0f, 0.8f, 0.0f, 1.0f};
+GLfloat darkGray[] = {0.25f, 0.25f, 0.25f, 1.0f};
 
 GLdouble cameraEye[3];
 GLdouble cameraCentre[3];
@@ -68,14 +69,6 @@ array<float, 3> subtract(const array<float, 3>& a, const array<float, 3>& b) {
 
 array<float, 3> cross(const array<float, 3>& a, const array<float, 3>& b) {
     return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
-}
-
-float dot(const array<float, 3>& a, const array<float, 3>& b) {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-array<float, 3> negate(const array<float, 3>& a) {
-    return {-a[0], -a[1], -a[2]};
 }
 
 array<float, 3> normalize(const array<float, 3>& a) {
@@ -176,42 +169,56 @@ void drawSphere(double r, const GLfloat* colour = mediumBlue) {
     drawMesh(mesh, colour);
 }
 
-Mesh buildMobius() {
+Mesh buildBlade() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
     int i, j;
-    int n = 60;
-    int m = 8;
-    float halfWidth = 0.4f;
+    int n = 40;
+    int m = 16;
+    float halfLength = 1.25f;
+    float curve = 0.3f;
+    float halfWidth = 0.2f;
+    float halfThickness = 0.04f;
+    float tipStart = 0.6f;
 
-    // Grid (i, j) to vertex and face index, i = n wraps to i = 0 with j flipped by the half twist
-    auto vertexIndex = [n, m](int i, int j) {
-        if (i == n) return m - j;
-        return i * (m + 1) + j;
-    };
-    auto faceIndex = [n, m](int i, int j) {
-        if (i < 0) return (n - 1) * m + (m - 1 - j);
-        if (i == n) return m - 1 - j;
-        return i * m + j;
+    int tip = n * m;
+    int cap = n * m + 1;
+
+    // Grid (i, j) to vertex and face index, ring i = n is the single tip vertex
+    auto vertexIndex = [n, m, tip](int i, int j) { return i == n ? tip : i * m + j % m; };
+    auto faceIndex = [m](int i, int j) { return i * m + (j + m) % m; };
+
+    auto centre = [&](float s) { return array<float, 3>{curve * s * s, -halfLength + 2 * halfLength * s, 0.0f}; };
+    auto across = [&](float s) { return normalize(array<float, 3>{1.0f, -curve * s / halfLength, 0.0f}); };
+    auto taper = [&](float s) {
+        float t = (s - tipStart) / (1 - tipStart);
+        return s < tipStart ? 1.0f : 1 - t * t;
     };
 
-    // Insert vertex positions, u goes around the loop and v across the strip with a half twist
+    // Insert vertex positions, an oval ring around each centre line point, then the tip, then the base cap ring
     for (i = 0; i < n; i++) {
-        for (j = 0; j <= m; j++) {
-            float u = 2 * M_PI * i / n;
-            float v = -halfWidth + 2 * halfWidth * j / m;
-            float x = (1 + v * cos(u / 2)) * cos(u);
-            float y = (1 + v * cos(u / 2)) * sin(u);
-            float z = v * sin(u / 2);
-            vertexAdjacency.emplace_back(array<float, 3>{x, y, z}, vector<int>());
+        float s = (float)i / n;
+        array<float, 3> c = centre(s);
+        array<float, 3> a = across(s);
+        for (j = 0; j < m; j++) {
+            float phi = 2 * M_PI * j / m;
+            float w = halfWidth * taper(s) * cos(phi);
+            float t = halfThickness * taper(s) * sin(phi);
+            vertexAdjacency.emplace_back(array<float, 3>{c[0] + w * a[0], c[1] + w * a[1], t}, vector<int>());
         }
     }
+    vertexAdjacency.emplace_back(centre(1.0f), vector<int>());
+    for (j = 0; j < m; j++) {
+        array<float, 3> p = vertexAdjacency[j].first;
+        vertexAdjacency.emplace_back(p, vector<int>());
+    }
 
-    // Insert vertex associated face indices and face adjacency, the seam joins row j to row m - j
+    // Insert vertex associated face indices and face adjacency, faces are body quads, tip triangles, then the base cap
     for (i = 0; i < n; i++) {
         for (j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
+            if (i == n - 1) face = {vertexIndex(i, j), tip, vertexIndex(i, j + 1)};
 
             // Record this face on each of its vertices, for averaging vertex normals
             int f = faceAdjacency.size();
@@ -219,27 +226,31 @@ Mesh buildMobius() {
                 vertexAdjacency[v].second.push_back(f);
             }
 
-            // Faces sharing an edge, none past the strip's two edges
-            vector<int> neighbours;
-            neighbours.push_back(faceIndex(i - 1, j));
-            neighbours.push_back(faceIndex(i + 1, j));
-            if (j > 0) neighbours.push_back(faceIndex(i, j - 1));
-            if (j < m - 1) neighbours.push_back(faceIndex(i, j + 1));
+            // Faces sharing an edge, wrapping around the oval, with the cap below the first ring
+            vector<int> neighbours = {faceIndex(i, j - 1), faceIndex(i, j + 1)};
+            neighbours.push_back(i > 0 ? faceIndex(i - 1, j) : n * m);
+            if (i < n - 1) neighbours.push_back(faceIndex(i + 1, j));
 
             faceAdjacency.emplace_back(face, neighbours);
         }
     }
 
+    vector<int> capFace, capNeighbours;
+    for (j = 0; j < m; j++) {
+        capFace.push_back(cap + j);
+        capNeighbours.push_back(faceIndex(0, j));
+        vertexAdjacency[cap + j].second.push_back(n * m);
+    }
+    faceAdjacency.emplace_back(capFace, capNeighbours);
+
     computeNormals(mesh);
     return mesh;
 }
 
-void drawMobius(double r, const GLfloat* colour = gold) {
-    static Mesh mesh = buildMobius();
+void drawBlade(double r, const GLfloat* colour = darkGray) {
+    static Mesh mesh = buildBlade();
     glScalef(r, r, r);
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
     drawMesh(mesh, colour);
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 }
 
 Mesh buildChainLink() {
@@ -250,8 +261,8 @@ Mesh buildChainLink() {
     int straightSteps = 8;
     int curveSteps = 16;
     int m = 16;
-    float halfStraight = 0.48f;
-    float bendRadius = 0.52f;
+    float halfStraight = 0.5f;
+    float bendRadius = 0.5f;
     float tubeRadius = 0.2f;
 
     // Centre line of the tube, a stadium of two straights and two semicircles, with its outward direction
@@ -395,7 +406,7 @@ void drawNunchuck() {
     int k;
     float chainHeight = 0.8f;
     float linkScale = 0.25f;
-    float linkPitch = 1.6f * linkScale;
+    float linkPitch = 1.5f * linkScale;
     int linkCount = 7;
     float chainHalfLength = (linkCount - 1) / 2.0f * linkPitch;
     float handleX = chainHalfLength + 0.8f * linkScale;
@@ -414,6 +425,13 @@ void drawNunchuck() {
         glTranslatef(x, -0.5f, 0.0f);
         glScalef(0.15f, 1.f, 0.15f);
         drawCylinder(1);
+        glPopMatrix();
+
+        glPushMatrix();
+        glTranslatef(x + 0.1f, -2.0f, 0.0f);
+        glRotatef(190.f, 0.f, 0.f, 1.f);
+        glScalef(0.5f, 0.5f, 0.5f);
+        drawBlade(1);
         glPopMatrix();
     }
 }
@@ -504,13 +522,10 @@ void computeNormals(Mesh& mesh) {
     }
 
     // Calculate vertex normals from surrounding face normals' average (a + b + c + ...)/n
-    // Face normals are flipped to one side first, since one-sided surfaces like a Mobius strip have no consistent outward
     for (auto& vertex : mesh.vertexAdjacency) {
         array<float, 3> sum = {0.0f, 0.0f, 0.0f};
         for (auto& f : vertex.second) {
-            array<float, 3> normal = mesh.faceNormals[f];
-            if (dot(normal, mesh.faceNormals[vertex.second[0]]) < 0) normal = negate(normal);
-            sum = add(sum, normal);
+            sum = add(sum, mesh.faceNormals[f]);
         }
         for (auto& s : sum) {
             s /= vertex.second.size();
@@ -540,9 +555,7 @@ void drawMesh(const Mesh& mesh, const GLfloat* colour) {
         }
         for (int v : mesh.faceAdjacency[f].first) {
             if (m_Smooth) {
-                array<float, 3> normal = mesh.vertexNormals[v];
-                if (dot(normal, mesh.faceNormals[f]) < 0) normal = negate(normal);
-                glNormal3fv(normal.data());
+                glNormal3fv(mesh.vertexNormals[v].data());
             }
             glVertex3fv(mesh.vertexAdjacency[v].first.data());
         }
@@ -617,7 +630,7 @@ void display(void) {
         case 1:
             glPushMatrix();
             glTranslatef(-1.35f, 0.0f, 0.0f);
-            drawMobius(0.5);
+            drawBlade(0.6);
             glPopMatrix();
 
             glPushMatrix();

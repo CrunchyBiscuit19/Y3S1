@@ -9,12 +9,10 @@ Every object is a **mesh**: a list of vertices and a list of faces. Each primiti
 - `faceAdjacency[f]`: the vertex indices of face `f` (listed counter-clockwise when seen from outside), and the faces that share an edge with it.
 - `faceNormals[f]`, `vertexNormals[v]`: filled in by `computeNormals`.
 
-**Vector helpers:** `add`, `subtract`, `cross`, `dot`, `negate` and `normalize`, all on 3-component vectors.
+**Vector helpers:** `add`, `subtract`, `cross` and `normalize`, all on 3-component vectors.
 
 $$
 \mathbf a \times \mathbf b = (a_y b_z - a_z b_y,\; a_z b_x - a_x b_z,\; a_x b_y - a_y b_x)
-\qquad
-\mathbf a \cdot \mathbf b = a_x b_x + a_y b_y + a_z b_z
 \qquad
 \hat{\mathbf a} = \frac{\mathbf a}{\lVert \mathbf a \rVert}
 $$
@@ -34,15 +32,26 @@ $$
 - Each pole is a single vertex.
 - The faces touching a pole lose their repeated corner and become triangles; all other faces are quads.
 
-**`buildMobius`**: a strip with a half twist. $u$ goes around the loop and $v$ goes across the strip.
+**`buildBlade`**: a curved sword blade. A flat oval cross-section is swept along a bent centre line, with $s \in [0, 1]$ running from base to tip.
 
 $$
-(x, y, z) = \big((1 + v\cos\tfrac u2)\cos u,\; (1 + v\cos\tfrac u2)\sin u,\; v\sin\tfrac u2\big),
-\qquad u \in [0, 2\pi),\; v \in [-0.4, 0.4]
+\mathbf c(s) = (0.3 s^2,\; -1.25 + 2.5 s,\; 0),
+\qquad
+\mathbf a(s) = \mathrm{normalize}(1,\; -0.3 s / 1.25,\; 0)
 $$
 
-- At $u = 2\pi$ the strip meets its start with $v$ flipped. So the last column of faces joins row $j$ to row $m - j$ at $u = 0$.
-- `drawMobius` turns on two-sided lighting, because both sides of the strip are visible.
+- $\mathbf c$ is the centre line, and $\mathbf a$ is the direction across the blade, at right angles to the centre line.
+- Each ring vertex is
+
+$$
+\mathbf p = \mathbf c + w(s)\cos\psi\, \mathbf a + t(s)\sin\psi\, \hat{\mathbf z},
+\qquad \psi = \tfrac{2\pi j}{m}
+$$
+
+  with half-width $w = 0.22\,k(s)$ and half-thickness $t = 0.04\,k(s)$.
+- The taper $k(s)$ is $1$ up to $s = 0.6$, then $1 - u^2$ with $u = \frac{s - 0.6}{0.4}$. Its slope stays finite at $u = 1$, so the blade ends in a sharp point.
+- The point is a single vertex, so the last band of faces is triangles.
+- The base is closed by one flat oval face, which has its own copies of the ring vertices so its edge stays sharp.
 
 **`buildChainLink`**: a round tube (radius $t = 0.2$) swept along a rounded-rectangle path, like a running track.
 - The path is two straight sides at $x = \pm b$ and two half-circle ends of radius $b$ centred at $(0, \pm a)$.
@@ -78,13 +87,12 @@ $$
 \mathbf n_v = \mathrm{normalize}\Big(\tfrac1k \textstyle\sum_f \mathbf n_f\Big)
 $$
 
-   First, any $\mathbf n_f$ with $\mathbf n_f \cdot \mathbf n_{\text{first}} < 0$ is flipped. This matters only for the Möbius strip, which has no consistent "outside".
 
 **`drawMesh(mesh, colour)`**
 - Sets the colour as the material's ambient and diffuse colour.
 - **Highlight on (H):** specular colour $(1, 1, 1)$ and shininess $64$. **Off:** specular colour $0$.
 - **Flat (S off):** one normal per face, $\mathbf n_f$.
-- **Smooth (S on):** one normal per vertex, $\mathbf n_v$, flipped if $\mathbf n_v \cdot \mathbf n_f < 0$.
+- **Smooth (S on):** one normal per vertex, $\mathbf n_v$.
 
 **`setupLighting`**: sets up one point light at $(-100, 100, 100)$ with ambient $0.7$, diffuse $0.8$ and specular $1$.
 
