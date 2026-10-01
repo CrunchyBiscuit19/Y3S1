@@ -140,25 +140,13 @@ void drawSpoiler() {
 
     glPushMatrix();
 
-    glTranslatef(6.f, -6.7f, 0.f);
-    glRotatef(-20.0f, 0.0f, 0.0f, 1.0f);  
+    glTranslatef(0.f, 6.f, 100.f);
 
     glBegin(GL_POLYGON);
     glVertex2f(0.f, 0.f);
     glVertex2f(.5f, 0.f);
     glVertex2f(.5f, 1.f);
     glVertex2f(0.f, 1.f);
-    glEnd();
-
-    glTranslatef(.0f, .5f, 0.f);
-    glScalef(1.5f, 1.5f, 1.5f);
-    glRotatef(20.0f, 0.0f, 0.0f, 1.0f);  
-
-    glBegin(GL_POLYGON);
-    glVertex2f(0.f, 0.f);
-    glVertex2f(.5f, 0.f);
-    glVertex2f(.5f, .5f);
-    glVertex2f(0.f, .5f);
     glEnd();
 
     glPopMatrix();

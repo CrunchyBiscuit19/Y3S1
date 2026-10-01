@@ -21,8 +21,8 @@
 #endif
 
 #include <array>
-#include <vector>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -30,8 +30,8 @@ using namespace std;
 
 bool m_Smooth = FALSE;
 bool m_Highlight = FALSE;
-GLfloat angle = 0;  /* in degrees */
-GLfloat angle2 = 0; /* in degrees */
+GLfloat angle = 0;
+GLfloat angle2 = 0;
 GLfloat zoom = 1.0;
 int mouseButton = 0;
 int moving, startx, starty;
@@ -59,13 +59,9 @@ struct Mesh {
     std::vector<std::array<float, 3>> vertexNormals;
 };
 
-array<float, 3> add(const array<float, 3>& a, const array<float, 3>& b) {
-    return {a[0] + b[0], a[1] + b[1], a[2] + b[2]};
-}
+array<float, 3> add(const array<float, 3>& a, const array<float, 3>& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 
-array<float, 3> subtract(const array<float, 3>& a, const array<float, 3>& b) {
-    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
-}
+array<float, 3> subtract(const array<float, 3>& a, const array<float, 3>& b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
 
 array<float, 3> cross(const array<float, 3>& a, const array<float, 3>& b) {
     return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
@@ -179,7 +175,7 @@ Mesh buildBlade() {
     float halfLength = 1.25f;
     float curve = 0.3f;
     float halfWidth = 0.2f;
-    float halfThickness = 0.04f;
+    float halfThickness = 0.05f;
     float tipStart = 0.6f;
 
     int tip = n * m;
@@ -189,9 +185,9 @@ Mesh buildBlade() {
     auto vertexIndex = [n, m, tip](int i, int j) { return i == n ? tip : i * m + j % m; };
     auto faceIndex = [m](int i, int j) { return i * m + (j + m) % m; };
 
-    auto centre = [&](float s) { return array<float, 3>{curve * s * s, -halfLength + 2 * halfLength * s, 0.0f}; };
-    auto across = [&](float s) { return normalize(array<float, 3>{1.0f, -curve * s / halfLength, 0.0f}); };
-    auto taper = [&](float s) {
+    auto centre = [&](float s) { return array<float, 3>{curve * s * s, -halfLength + 2 * halfLength * s, 0.f}; };
+    auto across = [&](float s) { return normalize(array<float, 3>{1.f, -curve * s / halfLength, 0.f}); };
+    auto tip = [&](float s) {
         float t = (s - tipStart) / (1 - tipStart);
         return s < tipStart ? 1.0f : 1 - t * t;
     };
@@ -203,8 +199,8 @@ Mesh buildBlade() {
         array<float, 3> a = across(s);
         for (j = 0; j < m; j++) {
             float phi = 2 * M_PI * j / m;
-            float w = halfWidth * taper(s) * cos(phi);
-            float t = halfThickness * taper(s) * sin(phi);
+            float w = halfWidth * tip(s) * cos(phi);
+            float t = halfThickness * tip(s) * sin(phi);
             vertexAdjacency.emplace_back(array<float, 3>{c[0] + w * a[0], c[1] + w * a[1], t}, vector<int>());
         }
     }
@@ -258,29 +254,29 @@ Mesh buildChainLink() {
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
     int i, j, k;
-    int straightSteps = 8;
-    int curveSteps = 16;
+    int straight = 8;
+    int curve = 16;
     int m = 16;
     float halfStraight = 0.5f;
     float bendRadius = 0.5f;
     float tubeRadius = 0.2f;
 
-    // Centre line of the tube, a stadium of two straights and two semicircles, with its outward direction
+    // Centre line of the tube, two straights and two semicircles
     vector<pair<array<float, 3>, array<float, 3>>> path;
-    for (k = 0; k < straightSteps; k++) {
-        float y = -halfStraight + 2 * halfStraight * k / straightSteps;
+    for (k = 0; k < straight; k++) {
+        float y = -halfStraight + 2 * halfStraight * k / straight;
         path.push_back({{bendRadius, y, 0.0f}, {1.0f, 0.0f, 0.0f}});
     }
-    for (k = 0; k < curveSteps; k++) {
-        float theta = M_PI * k / curveSteps;
+    for (k = 0; k < curve; k++) {
+        float theta = M_PI * k / curve;
         path.push_back({{bendRadius * cos(theta), halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
-    for (k = 0; k < straightSteps; k++) {
-        float y = halfStraight - 2 * halfStraight * k / straightSteps;
+    for (k = 0; k < straight; k++) {
+        float y = halfStraight - 2 * halfStraight * k / straight;
         path.push_back({{-bendRadius, y, 0.0f}, {-1.0f, 0.0f, 0.0f}});
     }
-    for (k = 0; k < curveSteps; k++) {
-        float theta = M_PI + M_PI * k / curveSteps;
+    for (k = 0; k < curve; k++) {
+        float theta = M_PI + M_PI * k / curve;
         path.push_back({{bendRadius * cos(theta), -halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
     int n = path.size();
@@ -334,7 +330,6 @@ Mesh buildCylinder() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
-    int i;
     int n = 32;
     float halfHeight = 1.25f;
 
@@ -362,13 +357,13 @@ Mesh buildCylinder() {
 
     // Insert vertex associated face indices and face adjacency, faces are side quads, then top and bottom cap triangles
     vector<vector<int>> faces;
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         faces.push_back({sideBottom + i, sideBottom + (i + 1) % n, sideTop + (i + 1) % n, sideTop + i});
     }
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         faces.push_back({capTopCentre, capTop + i, capTop + (i + 1) % n});
     }
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         faces.push_back({capBottomCentre, capBottom + (i + 1) % n, capBottom + i});
     }
 
@@ -378,7 +373,7 @@ Mesh buildCylinder() {
             vertexAdjacency[v].second.push_back(f);
         }
 
-        // Faces sharing an edge, the two in the same ring plus the side face or caps across the rim
+        // Faces sharing an edge. Same ring plus side face
         int ring = f / n;
         i = f % n;
         vector<int> neighbours = {ring * n + (i + n - 1) % n, ring * n + (i + 1) % n};
@@ -515,9 +510,9 @@ void drawAnchor() {
 void computeNormals(Mesh& mesh) {
     // Calculate face normals. For any 3 vertices abc, normal is (b - a) x (c - a)
     for (auto& face : mesh.faceAdjacency) {
-        array<float, 3>& a = mesh.vertexAdjacency[face.first[0]].first;
-        array<float, 3>& b = mesh.vertexAdjacency[face.first[1]].first;
-        array<float, 3>& c = mesh.vertexAdjacency[face.first[2]].first;
+        auto& a = mesh.vertexAdjacency[face.first[0]].first;
+        auto& b = mesh.vertexAdjacency[face.first[1]].first;
+        auto& c = mesh.vertexAdjacency[face.first[2]].first;
         mesh.faceNormals.push_back(normalize(cross(subtract(b, a), subtract(c, a))));
     }
 
@@ -548,7 +543,7 @@ void drawMesh(const Mesh& mesh, const GLfloat* colour) {
 
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, colour);
 
-    for (size_t f = 0; f < mesh.faceAdjacency.size(); f++) {
+    for (int f = 0; f < mesh.faceAdjacency.size(); f++) {
         glBegin(GL_POLYGON);
         if (!m_Smooth) {
             glNormal3fv(mesh.faceNormals[f].data());
