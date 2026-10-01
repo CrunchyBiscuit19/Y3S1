@@ -171,44 +171,44 @@ Mesh buildBlade() {
     int n = 40;
     int m = 16;
     float halfLength = 1.25f;
-    float curve = 0.3f;
+    float bend = 0.3f;
     float halfWidth = 0.2f;
     float halfThickness = 0.05f;
     float tipStart = 0.6f;
 
     int tipVertex = n * m;
-    int cap = n * m + 1;
+    int base = n * m + 1;
 
     // Grid (i, j) to vertex and face index, ring i = n is the single tip vertex
     auto vertexIndex = [n, m, tipVertex](int i, int j) { return i == n ? tipVertex : i * m + j % m; };
     auto faceIndex = [m](int i, int j) { return i * m + (j + m) % m; };
 
-    auto centre = [&](float s) { return array<float, 3>{curve * s * s, -halfLength + 2 * halfLength * s, 0.f}; };
-    auto across = [&](float s) { return normalize(array<float, 3>{1.f, -curve * s / halfLength, 0.f}); };
-    auto tip = [&](float s) {
-        float t = (s - tipStart) / (1 - tipStart);
-        return s < tipStart ? 1.0f : 1 - t * t;
+    auto middle = [&](float along) { return array<float, 3>{bend * along * along, -halfLength + 2 * halfLength * along, 0.f}; };
+    auto sideways = [&](float along) { return normalize(array<float, 3>{1.f, -bend * along / halfLength, 0.f}); };
+    auto tip = [&](float along) {
+        float t = (along - tipStart) / (1 - tipStart);
+        return along < tipStart ? 1.0f : 1 - t * t;
     };
 
-    // Insert vertex positions, an oval ring around each centre line point, then the tip, then the base cap ring
+    // Insert vertex positions, an oval ring around each middle point, then the tip, then the base ring
     for (int i = 0; i < n; i++) {
-        auto s = (float)i / n;
-        auto c = centre(s);
-        auto a = across(s);
+        auto along = (float)i / n;
+        auto mid = middle(along);
+        auto side = sideways(along);
         for (int j = 0; j < m; j++) {
             float phi = 2 * M_PI * j / m;
-            float w = halfWidth * tip(s) * cos(phi);
-            float t = halfThickness * tip(s) * sin(phi);
-            vertexAdjacency.emplace_back(array<float, 3>{c[0] + w * a[0], c[1] + w * a[1], t}, vector<int>());
+            float w = halfWidth * tip(along) * cos(phi);
+            float t = halfThickness * tip(along) * sin(phi);
+            vertexAdjacency.emplace_back(array<float, 3>{mid[0] + w * side[0], mid[1] + w * side[1], t}, vector<int>());
         }
     }
-    vertexAdjacency.emplace_back(centre(1.0f), vector<int>());
+    vertexAdjacency.emplace_back(middle(1.0f), vector<int>());
     for (int j = 0; j < m; j++) {
         auto p = vertexAdjacency[j].first;
         vertexAdjacency.emplace_back(p, vector<int>());
     }
 
-    // Insert vertex associated face indices and face adjacency, faces are body quads, tip triangles, then the base cap
+    // Insert vertex associated face indices and face adjacency, faces are body quads, tip triangles, then the base
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
@@ -220,7 +220,7 @@ Mesh buildBlade() {
                 vertexAdjacency[v].second.push_back(f);
             }
 
-            // Faces sharing an edge, wrapping around the oval, with the cap below the first ring
+            // Faces sharing an edge, wrapping around the oval, with the base below the first ring
             vector<int> neighbours = {faceIndex(i, j - 1), faceIndex(i, j + 1)};
             neighbours.push_back(i > 0 ? faceIndex(i - 1, j) : n * m);
             if (i < n - 1) neighbours.push_back(faceIndex(i + 1, j));
@@ -229,13 +229,13 @@ Mesh buildBlade() {
         }
     }
 
-    vector<int> capFace, capNeighbours;
+    vector<int> baseFace, baseNeighbours;
     for (int j = 0; j < m; j++) {
-        capFace.push_back(cap + j);
-        capNeighbours.push_back(faceIndex(0, j));
-        vertexAdjacency[cap + j].second.push_back(n * m);
+        baseFace.push_back(base + j);
+        baseNeighbours.push_back(faceIndex(0, j));
+        vertexAdjacency[base + j].second.push_back(n * m);
     }
-    faceAdjacency.emplace_back(capFace, capNeighbours);
+    faceAdjacency.emplace_back(baseFace, baseNeighbours);
 
     computeNormals(mesh);
     return mesh;
@@ -251,30 +251,30 @@ Mesh buildChainLink() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
-    int straight = 8;
-    int curve = 16;
+    int sideSteps = 8;
+    int endSteps = 16;
     int m = 16;
-    float halfStraight = 0.5f;
-    float bendRadius = 0.5f;
+    float halfSide = 0.5f;
+    float endRadius = 0.5f;
     float tubeRadius = 0.2f;
 
-    // Centre line of the tube, two straights and two semicircles
+    // Middle line of the tube, two straight sides and two round ends
     vector<pair<array<float, 3>, array<float, 3>>> path;
-    for (int k = 0; k < straight; k++) {
-        float y = -halfStraight + 2 * halfStraight * k / straight;
-        path.push_back({{bendRadius, y, 0.0f}, {1.0f, 0.0f, 0.0f}});
+    for (int k = 0; k < sideSteps; k++) {
+        float y = -halfSide + 2 * halfSide * k / sideSteps;
+        path.push_back({{endRadius, y, 0.0f}, {1.0f, 0.0f, 0.0f}});
     }
-    for (int k = 0; k < curve; k++) {
-        float theta = M_PI * k / curve;
-        path.push_back({{bendRadius * cos(theta), halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
+    for (int k = 0; k < endSteps; k++) {
+        float theta = M_PI * k / endSteps;
+        path.push_back({{endRadius * cos(theta), halfSide + endRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
-    for (int k = 0; k < straight; k++) {
-        float y = halfStraight - 2 * halfStraight * k / straight;
-        path.push_back({{-bendRadius, y, 0.0f}, {-1.0f, 0.0f, 0.0f}});
+    for (int k = 0; k < sideSteps; k++) {
+        float y = halfSide - 2 * halfSide * k / sideSteps;
+        path.push_back({{-endRadius, y, 0.0f}, {-1.0f, 0.0f, 0.0f}});
     }
-    for (int k = 0; k < curve; k++) {
-        float theta = M_PI + M_PI * k / curve;
-        path.push_back({{bendRadius * cos(theta), -halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
+    for (int k = 0; k < endSteps; k++) {
+        float theta = M_PI + M_PI * k / endSteps;
+        path.push_back({{endRadius * cos(theta), -halfSide + endRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
     int n = (int)path.size();
 
@@ -282,14 +282,14 @@ Mesh buildChainLink() {
     auto vertexIndex = [n, m](int i, int j) { return (i % n) * m + j % m; };
     auto faceIndex = [n, m](int i, int j) { return ((i + n) % n) * m + (j + m) % m; };
 
-    // Insert vertex positions, a circle of radius tubeRadius around each centre line point
+    // Insert vertex positions, a circle of radius tubeRadius around each middle point
     for (int i = 0; i < n; i++) {
-        auto& centre = path[i].first;
-        auto& outward = path[i].second;
+        auto& mid = path[i].first;
+        auto& out = path[i].second;
         for (int j = 0; j < m; j++) {
             float phi = 2 * M_PI * j / m;
-            float x = centre[0] + tubeRadius * cos(phi) * outward[0];
-            float y = centre[1] + tubeRadius * cos(phi) * outward[1];
+            float x = mid[0] + tubeRadius * cos(phi) * out[0];
+            float y = mid[1] + tubeRadius * cos(phi) * out[1];
             float z = tubeRadius * sin(phi);
             vertexAdjacency.emplace_back(array<float, 3>{x, y, z}, vector<int>());
         }
@@ -333,9 +333,9 @@ Mesh buildCylinder() {
     int sideBottom = 0;
     int sideTop = n;
     int capBottom = 2 * n;
-    int capBottomCentre = 3 * n;
+    int bottomMiddle = 3 * n;
     int capTop = 3 * n + 1;
-    int capTopCentre = 4 * n + 1;
+    int topMiddle = 4 * n + 1;
 
     // Insert vertex positions
     for (auto y : {-halfHeight, halfHeight}) {
@@ -358,10 +358,10 @@ Mesh buildCylinder() {
         faces.push_back({sideBottom + i, sideBottom + (i + 1) % n, sideTop + (i + 1) % n, sideTop + i});
     }
     for (int i = 0; i < n; i++) {
-        faces.push_back({capTopCentre, capTop + i, capTop + (i + 1) % n});
+        faces.push_back({topMiddle, capTop + i, capTop + (i + 1) % n});
     }
     for (int i = 0; i < n; i++) {
-        faces.push_back({capBottomCentre, capBottom + (i + 1) % n, capBottom + i});
+        faces.push_back({bottomMiddle, capBottom + (i + 1) % n, capBottom + i});
     }
 
     for (int f = 0; f < 3 * n; f++) {
@@ -370,11 +370,11 @@ Mesh buildCylinder() {
             vertexAdjacency[v].second.push_back(f);
         }
 
-        // Faces sharing an edge. Same ring plus side face
-        int ring = f / n;
+        // Faces sharing an edge. Same part plus side face
+        int part = f / n;
         int i = f % n;
-        vector<int> neighbours = {ring * n + (i + n - 1) % n, ring * n + (i + 1) % n};
-        if (ring == 0) {
+        vector<int> neighbours = {part * n + (i + n - 1) % n, part * n + (i + 1) % n};
+        if (part == 0) {
             neighbours.push_back(n + i);
             neighbours.push_back(2 * n + i);
         } else {
