@@ -157,10 +157,10 @@ Mesh buildSphere() {
     return mesh;
 }
 
-void drawSphere(double r, const GLfloat* colour = mediumBlue) {
+void drawSphere(double size, const GLfloat* colour = mediumBlue) {
     // Normals for smooth shading are computed in computeNormals(), called at the end of buildSphere()
     static Mesh mesh = buildSphere();
-    glScalef(r, r, r);
+    glScalef(size, size, size);
     drawMesh(mesh, colour);
 }
 
@@ -241,9 +241,9 @@ Mesh buildBlade() {
     return mesh;
 }
 
-void drawBlade(double r, const GLfloat* colour = darkGray) {
+void drawBlade(double size, const GLfloat* colour = darkGray) {
     static Mesh mesh = buildBlade();
-    glScalef(r, r, r);
+    glScalef(size, size, size);
     drawMesh(mesh, colour);
 }
 
@@ -317,9 +317,9 @@ Mesh buildChainLink() {
     return mesh;
 }
 
-void drawChainLink(double r, const GLfloat* colour = silver) {
+void drawChainLink(double size, const GLfloat* colour = silver) {
     static Mesh mesh = buildChainLink();
-    glScalef(r, r, r);
+    glScalef(size, size, size);
     drawMesh(mesh, colour);
 }
 
@@ -388,26 +388,26 @@ Mesh buildCylinder() {
     return mesh;
 }
 
-void drawCylinder(double r, const GLfloat* colour = maroon) {
+void drawCylinder(double size, const GLfloat* colour = maroon) {
     static Mesh mesh = buildCylinder();
-    glScalef(r, r, r);
+    glScalef(size, size, size);
     drawMesh(mesh, colour);
 }
 
 void drawNunchuck() {
     float chainHeight = 0.8f;
-    float linkScale = 0.25f;
-    float linkPitch = 1.5f * linkScale;
+    float linkSize = 0.25f;
+    float linkSpacing = 1.5f * linkSize;
     int linkCount = 7;
-    float chainHalfLength = (linkCount - 1) / 2.0f * linkPitch;
-    float handleX = chainHalfLength + 0.8f * linkScale;
+    float halfChain = (linkCount - 1) / 2.0f * linkSpacing;
+    float handleX = halfChain + 0.8f * linkSize;
 
     for (int k = 0; k < linkCount; k++) {
         glPushMatrix();
-        glTranslatef(-chainHalfLength + k * linkPitch, chainHeight, 0.0f);
+        glTranslatef(-halfChain + k * linkSpacing, chainHeight, 0.0f);
         if (k % 2 == 1) glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
         glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
-        drawChainLink(linkScale);
+        drawChainLink(linkSize);
         glPopMatrix();
     }
 
@@ -428,63 +428,63 @@ void drawNunchuck() {
 }
 
 void drawAnchor() {
-    float shankHalfLength = 1.2f;
-    float shankRadius = 0.1f;
+    float poleHalfLength = 1.2f;
+    float poleRadius = 0.1f;
     float armRadius = 0.1f;
-    float arcRadius = 0.9f;
-    float arcCentreY = -shankHalfLength + arcRadius;
-    float arcStart = -160.0f;
-    float arcEnd = -20.0f;
-    int armSegments = 10;
-    float stockY = 1.f;
-    float stockHalfLength = 0.8f;
-    float linkScale = 0.3f;
-    float linkPitch = 1.5f * linkScale;
-    float ringY = shankHalfLength + 0.8f * linkScale;
+    float curveRadius = 0.9f;
+    float curveCentreY = -poleHalfLength + curveRadius;
+    float curveStart = -160.0f;
+    float curveEnd = -20.0f;
+    int armPieces = 10;
+    float barY = 1.f;
+    float barHalfLength = 0.8f;
+    float linkSize = 0.3f;
+    float linkSpacing = 1.5f * linkSize;
+    float ringY = poleHalfLength + 0.8f * linkSize;
 
     glPushMatrix();
     glTranslatef(0.0f, -0.6f, 0.0f);
     glScalef(0.8f, 0.8f, 0.8f);
 
     glPushMatrix();
-    glScalef(shankRadius, shankHalfLength / 1.25f, shankRadius);
+    glScalef(poleRadius, poleHalfLength / 1.25f, poleRadius);
     drawCylinder(1);
     glPopMatrix();
 
     glPushMatrix();
-    glTranslatef(0.0f, stockY, 0.0f);
+    glTranslatef(0.0f, barY, 0.0f);
     glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
-    glScalef(0.1f, stockHalfLength / 1.25f, 0.1f);
+    glScalef(0.1f, barHalfLength / 1.25f, 0.1f);
     drawCylinder(1);
     glPopMatrix();
 
-    for (auto z : {-stockHalfLength, stockHalfLength}) {
+    for (auto z : {-barHalfLength, barHalfLength}) {
         glPushMatrix();
-        glTranslatef(0.0f, stockY, z);
+        glTranslatef(0.0f, barY, z);
         drawSphere(0.1, gold);
         glPopMatrix();
     }
 
-    float step = (arcEnd - arcStart) / armSegments;
-    float segmentHalfLength = arcRadius * sin(step / 2 * M_PI / 180);
-    for (int k = 0; k < armSegments; k++) {
-        float theta = arcStart + (k + 0.5f) * step;
+    float step = (curveEnd - curveStart) / armPieces;
+    float pieceHalfLength = curveRadius * sin(step / 2 * M_PI / 180);
+    for (int k = 0; k < armPieces; k++) {
+        float theta = curveStart + (k + 0.5f) * step;
         glPushMatrix();
-        glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
+        glTranslatef(curveRadius * cos(theta * M_PI / 180), curveCentreY + curveRadius * sin(theta * M_PI / 180), 0.0f);
         glRotatef(theta, 0.0f, 0.0f, 1.0f);
-        glScalef(armRadius, 1.1f * segmentHalfLength / 1.25f, armRadius);
+        glScalef(armRadius, 1.1f * pieceHalfLength / 1.25f, armRadius);
         drawCylinder(1);
         glPopMatrix();
     }
 
     glPushMatrix();
-    glTranslatef(0.0f, -shankHalfLength, 0.0f);
+    glTranslatef(0.0f, -poleHalfLength, 0.0f);
     drawSphere(0.14, maroon);
     glPopMatrix();
 
-    for (auto theta : {arcStart, arcEnd}) {
+    for (auto theta : {curveStart, curveEnd}) {
         glPushMatrix();
-        glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
+        glTranslatef(curveRadius * cos(theta * M_PI / 180), curveCentreY + curveRadius * sin(theta * M_PI / 180), 0.0f);
         glRotatef(theta, 0.0f, 0.0f, 1.0f);
         glScalef(0.15f, 0.3f, 0.1f);
         drawSphere(1, gold);
@@ -493,9 +493,9 @@ void drawAnchor() {
 
     for (int k = 0; k < 3; k++) {
         glPushMatrix();
-        glTranslatef(0.0f, ringY + k * linkPitch, 0.0f);
+        glTranslatef(0.0f, ringY + k * linkSpacing, 0.0f);
         if (k % 2 == 1) glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
-        drawChainLink(linkScale, k == 0 ? gold : silver);
+        drawChainLink(linkSize, k == 0 ? gold : silver);
         glPopMatrix();
     }
 
@@ -525,11 +525,11 @@ void computeNormals(Mesh& mesh) {
 }
 
 void drawMesh(const Mesh& mesh, const GLfloat* colour) {
-    GLfloat highlightSpecular[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
     GLfloat noSpecular[] = {0.0f, 0.0f, 0.0f, 1.0f};
 
     if (m_Highlight) {
-        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, highlightSpecular);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
         glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 64.0f);
     } else {
         glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, noSpecular);
