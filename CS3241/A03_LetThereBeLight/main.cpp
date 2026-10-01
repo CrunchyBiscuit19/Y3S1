@@ -68,7 +68,7 @@ array<float, 3> cross(const array<float, 3>& a, const array<float, 3>& b) {
 }
 
 array<float, 3> normalize(const array<float, 3>& a) {
-    float length = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    auto length = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
     if (length == 0.0f) return a;
     return {a[0] / length, a[1] / length, a[2] / length};
 }
@@ -103,7 +103,6 @@ Mesh buildSphere() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
-    int i, j;
     int n = 20;
 
     // Grid (i, j) to vertex index, each pole is a single vertex
@@ -115,8 +114,8 @@ Mesh buildSphere() {
 
     // Insert vertex positions
     vertexAdjacency.emplace_back(array<float, 3>{0.0f, 0.0f, 1.0f}, vector<int>());
-    for (j = 1; j < n; j++) {
-        for (i = 0; i < 2 * n; i++) {
+    for (int j = 1; j < n; j++) {
+        for (int i = 0; i < 2 * n; i++) {
             float x = sin(i * M_PI / n) * sin(j * M_PI / n);
             float y = cos(i * M_PI / n) * sin(j * M_PI / n);
             float z = cos(j * M_PI / n);
@@ -126,8 +125,8 @@ Mesh buildSphere() {
     vertexAdjacency.emplace_back(array<float, 3>{0.0f, 0.0f, -1.0f}, vector<int>());
 
     // Insert vertex associated face indices and face adjacency
-    for (i = 0; i < 2 * n; i++) {
-        for (j = 0; j < n; j++) {
+    for (int i = 0; i < 2 * n; i++) {
+        for (int j = 0; j < n; j++) {
             int corners[4] = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
             // Discard repeated corners
             vector<int> face;
@@ -138,8 +137,8 @@ Mesh buildSphere() {
             }
 
             // Record this face on each of its vertices, for averaging vertex normals
-            int f = faceAdjacency.size();
-            for (int v : face) {
+            int f = (int)faceAdjacency.size();
+            for (auto v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
@@ -169,7 +168,6 @@ Mesh buildBlade() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
-    int i, j;
     int n = 40;
     int m = 16;
     float halfLength = 1.25f;
@@ -178,11 +176,11 @@ Mesh buildBlade() {
     float halfThickness = 0.05f;
     float tipStart = 0.6f;
 
-    int tip = n * m;
+    int tipVertex = n * m;
     int cap = n * m + 1;
 
     // Grid (i, j) to vertex and face index, ring i = n is the single tip vertex
-    auto vertexIndex = [n, m, tip](int i, int j) { return i == n ? tip : i * m + j % m; };
+    auto vertexIndex = [n, m, tipVertex](int i, int j) { return i == n ? tipVertex : i * m + j % m; };
     auto faceIndex = [m](int i, int j) { return i * m + (j + m) % m; };
 
     auto centre = [&](float s) { return array<float, 3>{curve * s * s, -halfLength + 2 * halfLength * s, 0.f}; };
@@ -193,11 +191,11 @@ Mesh buildBlade() {
     };
 
     // Insert vertex positions, an oval ring around each centre line point, then the tip, then the base cap ring
-    for (i = 0; i < n; i++) {
-        float s = (float)i / n;
-        array<float, 3> c = centre(s);
-        array<float, 3> a = across(s);
-        for (j = 0; j < m; j++) {
+    for (int i = 0; i < n; i++) {
+        auto s = (float)i / n;
+        auto c = centre(s);
+        auto a = across(s);
+        for (int j = 0; j < m; j++) {
             float phi = 2 * M_PI * j / m;
             float w = halfWidth * tip(s) * cos(phi);
             float t = halfThickness * tip(s) * sin(phi);
@@ -205,20 +203,20 @@ Mesh buildBlade() {
         }
     }
     vertexAdjacency.emplace_back(centre(1.0f), vector<int>());
-    for (j = 0; j < m; j++) {
-        array<float, 3> p = vertexAdjacency[j].first;
+    for (int j = 0; j < m; j++) {
+        auto p = vertexAdjacency[j].first;
         vertexAdjacency.emplace_back(p, vector<int>());
     }
 
     // Insert vertex associated face indices and face adjacency, faces are body quads, tip triangles, then the base cap
-    for (i = 0; i < n; i++) {
-        for (j = 0; j < m; j++) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
-            if (i == n - 1) face = {vertexIndex(i, j), tip, vertexIndex(i, j + 1)};
+            if (i == n - 1) face = {vertexIndex(i, j), tipVertex, vertexIndex(i, j + 1)};
 
             // Record this face on each of its vertices, for averaging vertex normals
-            int f = faceAdjacency.size();
-            for (int v : face) {
+            int f = (int)faceAdjacency.size();
+            for (auto v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
@@ -232,7 +230,7 @@ Mesh buildBlade() {
     }
 
     vector<int> capFace, capNeighbours;
-    for (j = 0; j < m; j++) {
+    for (int j = 0; j < m; j++) {
         capFace.push_back(cap + j);
         capNeighbours.push_back(faceIndex(0, j));
         vertexAdjacency[cap + j].second.push_back(n * m);
@@ -253,7 +251,6 @@ Mesh buildChainLink() {
     Mesh mesh;
     auto& vertexAdjacency = mesh.vertexAdjacency;
     auto& faceAdjacency = mesh.faceAdjacency;
-    int i, j, k;
     int straight = 8;
     int curve = 16;
     int m = 16;
@@ -263,33 +260,33 @@ Mesh buildChainLink() {
 
     // Centre line of the tube, two straights and two semicircles
     vector<pair<array<float, 3>, array<float, 3>>> path;
-    for (k = 0; k < straight; k++) {
+    for (int k = 0; k < straight; k++) {
         float y = -halfStraight + 2 * halfStraight * k / straight;
         path.push_back({{bendRadius, y, 0.0f}, {1.0f, 0.0f, 0.0f}});
     }
-    for (k = 0; k < curve; k++) {
+    for (int k = 0; k < curve; k++) {
         float theta = M_PI * k / curve;
         path.push_back({{bendRadius * cos(theta), halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
-    for (k = 0; k < straight; k++) {
+    for (int k = 0; k < straight; k++) {
         float y = halfStraight - 2 * halfStraight * k / straight;
         path.push_back({{-bendRadius, y, 0.0f}, {-1.0f, 0.0f, 0.0f}});
     }
-    for (k = 0; k < curve; k++) {
+    for (int k = 0; k < curve; k++) {
         float theta = M_PI + M_PI * k / curve;
         path.push_back({{bendRadius * cos(theta), -halfStraight + bendRadius * sin(theta), 0.0f}, {cos(theta), sin(theta), 0.0f}});
     }
-    int n = path.size();
+    int n = (int)path.size();
 
     // Grid (i, j) to vertex and face index, wrapping both along and around the tube
     auto vertexIndex = [n, m](int i, int j) { return (i % n) * m + j % m; };
     auto faceIndex = [n, m](int i, int j) { return ((i + n) % n) * m + (j + m) % m; };
 
     // Insert vertex positions, a circle of radius tubeRadius around each centre line point
-    for (i = 0; i < n; i++) {
-        array<float, 3>& centre = path[i].first;
-        array<float, 3>& outward = path[i].second;
-        for (j = 0; j < m; j++) {
+    for (int i = 0; i < n; i++) {
+        auto& centre = path[i].first;
+        auto& outward = path[i].second;
+        for (int j = 0; j < m; j++) {
             float phi = 2 * M_PI * j / m;
             float x = centre[0] + tubeRadius * cos(phi) * outward[0];
             float y = centre[1] + tubeRadius * cos(phi) * outward[1];
@@ -299,13 +296,13 @@ Mesh buildChainLink() {
     }
 
     // Insert vertex associated face indices and face adjacency, wrapping both along and around the tube
-    for (i = 0; i < n; i++) {
-        for (j = 0; j < m; j++) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
             vector<int> face = {vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)};
 
             // Record this face on each of its vertices, for averaging vertex normals
-            int f = faceAdjacency.size();
-            for (int v : face) {
+            int f = (int)faceAdjacency.size();
+            for (auto v : face) {
                 vertexAdjacency[v].second.push_back(f);
             }
 
@@ -341,14 +338,14 @@ Mesh buildCylinder() {
     int capTopCentre = 4 * n + 1;
 
     // Insert vertex positions
-    for (float y : {-halfHeight, halfHeight}) {
-        for (i = 0; i < n; i++) {
+    for (auto y : {-halfHeight, halfHeight}) {
+        for (int i = 0; i < n; i++) {
             float theta = 2 * M_PI * i / n;
             vertexAdjacency.emplace_back(array<float, 3>{cos(theta), y, -sin(theta)}, vector<int>());
         }
     }
-    for (float y : {-halfHeight, halfHeight}) {
-        for (i = 0; i < n; i++) {
+    for (auto y : {-halfHeight, halfHeight}) {
+        for (int i = 0; i < n; i++) {
             float theta = 2 * M_PI * i / n;
             vertexAdjacency.emplace_back(array<float, 3>{cos(theta), y, -sin(theta)}, vector<int>());
         }
@@ -369,13 +366,13 @@ Mesh buildCylinder() {
 
     for (int f = 0; f < 3 * n; f++) {
         // Record this face on each of its vertices, for averaging vertex normals
-        for (int v : faces[f]) {
+        for (auto v : faces[f]) {
             vertexAdjacency[v].second.push_back(f);
         }
 
         // Faces sharing an edge. Same ring plus side face
         int ring = f / n;
-        i = f % n;
+        int i = f % n;
         vector<int> neighbours = {ring * n + (i + n - 1) % n, ring * n + (i + 1) % n};
         if (ring == 0) {
             neighbours.push_back(n + i);
@@ -398,7 +395,6 @@ void drawCylinder(double r, const GLfloat* colour = maroon) {
 }
 
 void drawNunchuck() {
-    int k;
     float chainHeight = 0.8f;
     float linkScale = 0.25f;
     float linkPitch = 1.5f * linkScale;
@@ -406,7 +402,7 @@ void drawNunchuck() {
     float chainHalfLength = (linkCount - 1) / 2.0f * linkPitch;
     float handleX = chainHalfLength + 0.8f * linkScale;
 
-    for (k = 0; k < linkCount; k++) {
+    for (int k = 0; k < linkCount; k++) {
         glPushMatrix();
         glTranslatef(-chainHalfLength + k * linkPitch, chainHeight, 0.0f);
         if (k % 2 == 1) glRotatef(90.0f, 1.0f, 0.0f, 0.0f);
@@ -415,7 +411,7 @@ void drawNunchuck() {
         glPopMatrix();
     }
 
-    for (float x : {-handleX, handleX}) {
+    for (auto x : {-handleX, handleX}) {
         glPushMatrix();
         glTranslatef(x, -0.5f, 0.0f);
         glScalef(0.15f, 1.f, 0.15f);
@@ -432,7 +428,6 @@ void drawNunchuck() {
 }
 
 void drawAnchor() {
-    int k;
     float shankHalfLength = 1.2f;
     float shankRadius = 0.1f;
     float armRadius = 0.1f;
@@ -463,7 +458,7 @@ void drawAnchor() {
     drawCylinder(1);
     glPopMatrix();
 
-    for (float z : {-stockHalfLength, stockHalfLength}) {
+    for (auto z : {-stockHalfLength, stockHalfLength}) {
         glPushMatrix();
         glTranslatef(0.0f, stockY, z);
         drawSphere(0.1, gold);
@@ -472,7 +467,7 @@ void drawAnchor() {
 
     float step = (arcEnd - arcStart) / armSegments;
     float segmentHalfLength = arcRadius * sin(step / 2 * M_PI / 180);
-    for (k = 0; k < armSegments; k++) {
+    for (int k = 0; k < armSegments; k++) {
         float theta = arcStart + (k + 0.5f) * step;
         glPushMatrix();
         glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
@@ -487,7 +482,7 @@ void drawAnchor() {
     drawSphere(0.14, maroon);
     glPopMatrix();
 
-    for (float theta : {arcStart, arcEnd}) {
+    for (auto theta : {arcStart, arcEnd}) {
         glPushMatrix();
         glTranslatef(arcRadius * cos(theta * M_PI / 180), arcCentreY + arcRadius * sin(theta * M_PI / 180), 0.0f);
         glRotatef(theta, 0.0f, 0.0f, 1.0f);
@@ -496,7 +491,7 @@ void drawAnchor() {
         glPopMatrix();
     }
 
-    for (k = 0; k < 3; k++) {
+    for (int k = 0; k < 3; k++) {
         glPushMatrix();
         glTranslatef(0.0f, ringY + k * linkPitch, 0.0f);
         if (k % 2 == 1) glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
@@ -518,8 +513,8 @@ void computeNormals(Mesh& mesh) {
 
     // Calculate vertex normals from surrounding face normals' average (a + b + c + ...)/n
     for (auto& vertex : mesh.vertexAdjacency) {
-        array<float, 3> sum = {0.0f, 0.0f, 0.0f};
-        for (auto& f : vertex.second) {
+        auto sum = array<float, 3>{0.0f, 0.0f, 0.0f};
+        for (auto f : vertex.second) {
             sum = add(sum, mesh.faceNormals[f]);
         }
         for (auto& s : sum) {
@@ -543,12 +538,12 @@ void drawMesh(const Mesh& mesh, const GLfloat* colour) {
 
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, colour);
 
-    for (int f = 0; f < mesh.faceAdjacency.size(); f++) {
+    for (int f = 0; f < (int)mesh.faceAdjacency.size(); f++) {
         glBegin(GL_POLYGON);
         if (!m_Smooth) {
             glNormal3fv(mesh.faceNormals[f].data());
         }
-        for (int v : mesh.faceAdjacency[f].first) {
+        for (auto v : mesh.faceAdjacency[f].first) {
             if (m_Smooth) {
                 glNormal3fv(mesh.vertexNormals[v].data());
             }
